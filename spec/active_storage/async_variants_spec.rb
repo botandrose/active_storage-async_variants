@@ -1,0 +1,269 @@
+# frozen_string_literal: true
+
+RSpec.describe "async variants" do
+  before do
+    @user = User.create!
+    @user.avatar.attach(
+      io: File.open("spec/support/fixtures/image.png"),
+      filename: "image.png",
+      content_type: "image/png",
+    )
+  end
+
+  describe "fallback: :original" do
+    it "serves the original URL when variant is not yet processed" do
+      variant = @user.avatar.variant(:thumb)
+      expect(variant.url).to be_present
+      expect(variant.url).to end_with("/image.png")
+    end
+  end
+
+  describe "without fallback" do
+    it "returns nil when variant is not yet processed (standard behavior)" do
+      variant = @user.avatar.variant(:thumb_sync)
+      expect(variant.url).to be_nil
+    end
+  end
+
+  describe "fallback: :blank" do
+    it "returns nil when variant is not yet processed" do
+      variant = @user.avatar.variant(:thumb_blank)
+      expect(variant.url).to be_nil
+    end
+  end
+
+  describe "fallback: Proc" do
+    it "calls the proc when variant is not yet processed" do
+      variant = @user.avatar.variant(:thumb_custom)
+      expect(variant.url).to eq("/placeholders/processing.svg")
+    end
+  end
+
+  describe "after processing" do
+    it "serves the variant URL, not the fallback" do
+      variant = @user.avatar.variant(:thumb)
+      simulate_processed_variant(variant)
+
+      expect(variant.url).to be_present
+      expect(variant.url).to end_with("/thumb.png")
+    end
+
+    it "still serves fallback when variant record exists but is not processed" do
+      variant = @user.avatar.variant(:thumb)
+      create_variant_record(variant, state: "processing")
+
+      expect(variant.url).to end_with("/image.png")
+    end
+  end
+
+  describe "state query API" do
+    it "reports pending when no record exists" do
+      variant = @user.avatar.variant(:thumb)
+      expect(variant.pending?).to be true
+      expect(variant.processing?).to be false
+      expect(variant.ready?).to be false
+      expect(variant.failed?).to be false
+      expect(variant.error).to be_nil
+    end
+
+    it "reports processing when record state is processing" do
+      variant = @user.avatar.variant(:thumb)
+      create_variant_record(variant, state: "processing")
+
+      expect(variant.pending?).to be false
+      expect(variant.processing?).to be true
+      expect(variant.ready?).to be false
+      expect(variant.failed?).to be false
+    end
+
+    it "reports ready when variant is processed" do
+      variant = @user.avatar.variant(:thumb)
+      simulate_processed_variant(variant)
+
+      expect(variant.pending?).to be false
+      expect(variant.processing?).to be false
+      expect(variant.ready?).to be true
+      expect(variant.failed?).to be false
+    end
+
+    it "reports failed with error message" do
+      variant = @user.avatar.variant(:thumb)
+      create_variant_record(variant, state: "failed", error: "ffmpeg exited with status 1")
+
+      expect(variant.pending?).to be false
+      expect(variant.processing?).to be false
+      expect(variant.ready?).to be false
+      expect(variant.failed?).to be true
+      expect(variant.error).to eq("ffmpeg exited with status 1")
+    end
+  end
+
+  describe "callback endpoint", type: :request do
+    it "transitions variant to processed on success callback" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "success", content_type: "image/webp", byte_size: 1234 },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      variant_record.reload
+      expect(variant_record.state).to eq("processed")
+    end
+
+    it "transitions variant to failed on failure callback" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "failed", error: "ffmpeg exited with status 1" },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      variant_record.reload
+      expect(variant_record.state).to eq("failed")
+      expect(variant_record.error).to eq("ffmpeg exited with status 1")
+    end
+
+    it "rejects requests with invalid tokens" do
+      post "/active_storage/async_variants/callbacks/invalid-token",
+        params: { status: "success" },
+        as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
+
+  describe "default transformer (no transformer: option)" do
+    it "processes the variant using standard ActiveStorage processing" do
+      variant = @user.avatar.variant(:thumb)
+      expect(variant.pending?).to be true
+
+      allow_any_instance_of(ActiveStorage::Variation).to receive(:transform) do |_variation, input, &block|
+        block.call(input)
+      end
+
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb)
+
+      expect(variant.ready?).to be true
+    end
+  end
+
+  describe "inline transformer" do
+    it "processes the variant via background job" do
+      variant = @user.avatar.variant(:thumb_inline)
+      expect(variant.pending?).to be true
+
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_inline)
+
+      expect(variant.ready?).to be true
+      expect(variant.url).to be_present
+      expect(variant.url).to end_with("/copy.png")
+    end
+  end
+
+  describe "external transformer" do
+    it "calls initiate with presigned URLs and callback URL" do
+      FakeExternalTransformer.last_call = nil
+
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external)
+
+      expect(FakeExternalTransformer.last_call).to be_present
+      expect(FakeExternalTransformer.last_call[:source_url]).to be_present
+      expect(FakeExternalTransformer.last_call[:callback_url]).to be_present
+    end
+
+    it "sets variant to processing state after initiating" do
+      variant = @user.avatar.variant(:thumb_external)
+
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external)
+
+      expect(variant.processing?).to be true
+    end
+  end
+
+  describe "auto-enqueue on attachment" do
+    it "enqueues a ProcessJob for each async variant when a file is attached" do
+      user = User.create!
+
+      expect {
+        user.avatar.attach(
+          io: File.open("spec/support/fixtures/image.png"),
+          filename: "image.png",
+          content_type: "image/png",
+        )
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob).at_least(:once)
+    end
+
+    it "does not enqueue jobs for variants without fallback" do
+      user = User.create!
+
+      user.avatar.attach(
+        io: File.open("spec/support/fixtures/image.png"),
+        filename: "image.png",
+        content_type: "image/png",
+      )
+
+      enqueued_variant_names = ActiveJob::Base.queue_adapter.enqueued_jobs
+        .select { |job| job["job_class"] == "ActiveStorage::AsyncVariants::ProcessJob" }
+        .map { |job| job["arguments"].last }
+
+      expect(enqueued_variant_names).not_to include("thumb_sync")
+    end
+  end
+
+  describe "failure handling" do
+    it "marks variant as failed when transformer raises" do
+      variant = @user.avatar.variant(:thumb_failing)
+
+      expect {
+        ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_failing)
+      }.to raise_error("ffmpeg exited with status 1")
+
+      expect(variant.failed?).to be true
+      expect(variant.error).to eq("ffmpeg exited with status 1")
+    end
+
+    it "tracks attempt count" do
+      variant = @user.avatar.variant(:thumb_failing)
+
+      expect {
+        ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_failing)
+      }.to raise_error(RuntimeError)
+
+      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      expect(record.attempts).to eq(1)
+    end
+
+    it "re-raises to allow retry when under max_retries" do
+      variant = @user.avatar.variant(:thumb_failing)
+
+      expect {
+        ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_failing)
+      }.to raise_error(RuntimeError)
+
+      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      expect(record.attempts).to eq(1)
+      expect(record.state).to eq("failed")
+    end
+
+    it "does not re-raise when max_retries is exceeded" do
+      variant = @user.avatar.variant(:thumb_failing)
+      # Pre-create a record with attempts already at the max (max_retries: 2)
+      create_variant_record(variant, state: "failed")
+      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      record.update!(attempts: 2)
+
+      expect {
+        ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_failing)
+      }.not_to raise_error
+
+      record.reload
+      expect(record.attempts).to eq(3)
+      expect(record.state).to eq("failed")
+    end
+  end
+end
