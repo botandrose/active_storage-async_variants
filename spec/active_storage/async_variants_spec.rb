@@ -335,6 +335,82 @@ RSpec.describe "async variants" do
     end
   end
 
+  describe "base Transformer" do
+    it "raises NotImplementedError for process" do
+      expect {
+        ActiveStorage::AsyncVariants::Transformer.new.process(nil)
+      }.to raise_error(NotImplementedError, /process/)
+    end
+
+    it "raises NotImplementedError for initiate" do
+      expect {
+        ActiveStorage::AsyncVariants::Transformer.new.initiate(source_url: "x", callback_url: "y")
+      }.to raise_error(NotImplementedError, /initiate/)
+    end
+
+    it "raises NotImplementedError for process_preview" do
+      expect {
+        ActiveStorage::AsyncVariants::Transformer.new.process_preview(blob: nil, variation: nil)
+      }.to raise_error(NotImplementedError, /process_preview/)
+    end
+  end
+
+  describe "Variation with non-Hash input" do
+    it "defaults async_options to empty hash" do
+      transformations = Struct.new(:deep_symbolize_keys).new({})
+      variation = ActiveStorage::Variation.new(transformations)
+      expect(variation.async_options).to eq({})
+    end
+  end
+
+  describe "variant.processed without transformer" do
+    it "delegates to standard ActiveStorage processing" do
+      variant = @user.avatar.variant(:thumb)
+
+      allow_any_instance_of(ActiveStorage::Variation).to receive(:transform) do |_variation, input, &block|
+        block.call(input)
+      end
+
+      variant.processed
+
+      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      expect(record).to be_present
+      expect(record.image).to be_attached
+    end
+  end
+
+  describe "non-async preview passthrough" do
+    let(:blob) { @user.avatar.blob }
+    let(:variation) { ActiveStorage::Variation.wrap(resize_to_limit: [100, 100]) }
+    let(:preview) { ActiveStorage::Preview.new(blob, variation) }
+
+    it "delegates process to standard ActiveStorage" do
+      expect { preview.process }.to raise_error(NoMethodError)
+    end
+
+    it "delegates url to standard ActiveStorage" do
+      expect { preview.url }.to raise_error(ActiveStorage::Preview::UnprocessedError)
+    end
+
+    it "delegates key to standard ActiveStorage" do
+      expect { preview.key }.to raise_error(ActiveStorage::Preview::UnprocessedError)
+    end
+  end
+
+  describe "callback with unknown status", type: :request do
+    it "returns unprocessable_entity" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "unknown" },
+        as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+  end
+
   describe "failure handling" do
     it "marks variant as failed when transformer raises" do
       variant = @user.avatar.variant(:thumb_failing)
