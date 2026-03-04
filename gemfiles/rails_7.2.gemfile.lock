@@ -2,7 +2,7 @@ PATH
   remote: ..
   specs:
     active_storage-async_variants (0.1.0)
-      activestorage (>= 7.1)
+      activestorage (>= 7.2)
 
 GEM
   remote: https://rubygems.org/
