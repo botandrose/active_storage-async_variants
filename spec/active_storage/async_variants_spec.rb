@@ -215,6 +215,126 @@ RSpec.describe "async variants" do
     end
   end
 
+  describe "variant.processed with transformer" do
+    it "processes inline transformer directly without ProcessJob" do
+      variant = @user.avatar.variant(:thumb_inline)
+
+      variant.processed
+
+      expect(variant.ready?).to be true
+      expect(variant.url).to end_with("/copy.png")
+    end
+
+    it "initiates external transformer directly without ProcessJob" do
+      FakeExternalTransformer.last_call = nil
+      variant = @user.avatar.variant(:thumb_external)
+
+      variant.processed
+
+      expect(FakeExternalTransformer.last_call).to be_present
+      expect(FakeExternalTransformer.last_call[:source_url]).to be_present
+      expect(FakeExternalTransformer.last_call[:callback_url]).to be_present
+      expect(variant.processing?).to be true
+    end
+
+    it "skips processing when variant is already processing" do
+      variant = @user.avatar.variant(:thumb_inline)
+      create_variant_record(variant, state: "processing")
+
+      variant.processed
+
+      expect(variant.processing?).to be true
+    end
+
+    it "skips processing when variant is already processed" do
+      variant = @user.avatar.variant(:thumb_inline)
+      simulate_processed_variant(variant)
+
+      variant.processed
+
+      expect(variant.ready?).to be true
+    end
+  end
+
+  describe "async preview" do
+    let(:blob) { @user.avatar.blob }
+
+    let(:preview) do
+      variation = ActiveStorage::Variation.wrap(
+        resize_to_limit: [100, 100],
+        transformer: FakePreviewTransformer,
+        fallback: :original,
+      )
+      ActiveStorage::Preview.new(blob, variation)
+    end
+
+    before { FakePreviewTransformer.process_preview_called = false }
+
+    it "delegates to transformer.process_preview" do
+      preview.processed
+
+      expect(FakePreviewTransformer.process_preview_called).to be true
+    end
+
+    it "reports processed after transformer completes" do
+      preview.processed
+
+      expect(preview.processed?).to be true
+    end
+
+    it "serves the variant URL when processed" do
+      preview.processed
+
+      expect(preview.url).to be_present
+      expect(preview.url).to end_with("/thumb.png")
+    end
+
+    it "serves fallback URL when not yet processed" do
+      expect(preview.url).to end_with("/image.png")
+    end
+
+    it "returns nil for fallback: :blank" do
+      variation = ActiveStorage::Variation.wrap(
+        resize_to_limit: [100, 100],
+        transformer: FakePreviewTransformer,
+        fallback: :blank,
+      )
+      blank_preview = ActiveStorage::Preview.new(blob, variation)
+
+      expect(blank_preview.url).to be_nil
+    end
+
+    it "calls proc for fallback: Proc" do
+      variation = ActiveStorage::Variation.wrap(
+        resize_to_limit: [100, 100],
+        transformer: FakePreviewTransformer,
+        fallback: ->(_blob) { "/placeholders/video.svg" },
+      )
+      custom_preview = ActiveStorage::Preview.new(blob, variation)
+
+      expect(custom_preview.url).to eq("/placeholders/video.svg")
+    end
+
+    it "does not call process_preview if preview_image already attached" do
+      preview.processed
+      FakePreviewTransformer.process_preview_called = false
+
+      preview.processed
+
+      expect(FakePreviewTransformer.process_preview_called).to be false
+    end
+
+    it "returns variant blob key when processed" do
+      preview.processed
+
+      expect(preview.key).to be_present
+    end
+
+    it "raises UnprocessedError for key when not processed" do
+      expect { preview.key }.to raise_error(ActiveStorage::Preview::UnprocessedError)
+    end
+  end
+
   describe "failure handling" do
     it "marks variant as failed when transformer raises" do
       variant = @user.avatar.variant(:thumb_failing)

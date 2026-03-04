@@ -11,6 +11,14 @@ module ActiveStorage
         end
       end
 
+      def process
+        if async? && (transformer_class = variation.async_options[:transformer])
+          process_with_transformer(transformer_class)
+        else
+          super
+        end
+      end
+
       def ready?
         async_record&.state == "processed"
       end
@@ -43,6 +51,31 @@ module ActiveStorage
 
       def async_record
         blob.variant_records.find_by(variation_digest: variation.digest)
+      end
+
+      def process_with_transformer(transformer_class)
+        transformer = transformer_class.new
+        variant_record = blob.variant_records.create_or_find_by!(variation_digest: variation.digest)
+        return self if variant_record.state.in?(%w[processing processed])
+        variant_record.update!(state: "processing")
+
+        if transformer.inline?
+          blob.open do |file|
+            result = transformer.process(file, **variation.transformations)
+            variant_record.image.attach(
+              io: result[:io], filename: result[:filename],
+              content_type: result[:content_type], service_name: blob.service.name,
+            )
+            variant_record.update!(state: "processed")
+          end
+        else
+          callback_url = ActiveStorage::AsyncVariants.callback_url_for(variant_record)
+          transformer.initiate(
+            source_url: blob.url, callback_url: callback_url,
+            variant_record_id: variant_record.id, **variation.transformations,
+          )
+        end
+        self
       end
 
       def fallback_url(...)
