@@ -8,5 +8,6 @@ module Dummy
     config.load_defaults 7.1
     config.eager_load = false
     config.active_storage.service = :test
+    $LOAD_PATH.unshift root.join("lib").to_s
   end
 end

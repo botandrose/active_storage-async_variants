@@ -4,15 +4,15 @@ module ActiveStorage
   module AsyncVariants
     module VariantWithRecordExtension
       def url(...)
-        if processed?
-          super
-        else
+        if async_active? && !processed?
           fallback_url(...)
+        else
+          super
         end
       end
 
       def process
-        if async? && (transformer_class = variation.async_options[:transformer])
+        if async? && !blob.service.is_a?(ActiveStorage::Service::DiskService) && (transformer_class = variation.async_options[:transformer])
           process_with_transformer(transformer_class)
         else
           super
@@ -42,11 +42,15 @@ module ActiveStorage
       private
 
       def processed?
-        async? ? ready? : super
+        async_active? ? ready? : super
       end
 
       def async?
         variation.async_options[:fallback].present?
+      end
+
+      def async_active?
+        async? && !blob.service.is_a?(ActiveStorage::Service::DiskService)
       end
 
       def async_record
