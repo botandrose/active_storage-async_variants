@@ -3,6 +3,10 @@
 module ActiveStorage
   module AsyncVariants
     class ProcessJob < ActiveJob::Base
+      retry_on StandardError, wait: :polynomially_longer, attempts: 3 do |job, error|
+        job.logger.error "AsyncVariants: permanently failed: #{error.message}"
+      end
+
       def perform(record, attachment_name, variant_name)
         attachment = record.public_send(attachment_name)
         @variant = attachment.variant(variant_name.to_sym)
@@ -30,12 +34,7 @@ module ActiveStorage
           error: e.message,
           attempts: (@variant_record&.attempts || 0) + 1,
         )
-        max_retries = @async_options&.fetch(:max_retries, 3) || 3
-        if @variant_record.nil? || @variant_record.attempts < max_retries
-          raise
-        else
-          logger.error "AsyncVariants: permanently failed after #{@variant_record.attempts} attempts: #{e.message}"
-        end
+        raise
       end
 
       private

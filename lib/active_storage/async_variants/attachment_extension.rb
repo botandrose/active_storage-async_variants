@@ -11,8 +11,6 @@ module ActiveStorage
       end
 
       def enqueue_async_variant_jobs
-        return if blob.service.is_a?(ActiveStorage::Service::DiskService)
-
         named_variants.each do |name, named_variant|
           next unless named_variant.transformations.key?(:fallback)
 

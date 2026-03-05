@@ -3,7 +3,7 @@
 module ActiveStorage
   module AsyncVariants
     module VariationExtension
-      ASYNC_KEYS = %i[fallback transformer max_retries].freeze
+      ASYNC_KEYS = %i[fallback transformer].freeze
 
       def initialize(transformations)
         if transformations.is_a?(Hash)

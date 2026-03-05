@@ -412,52 +412,27 @@ RSpec.describe "async variants" do
   end
 
   describe "failure handling" do
-    it "marks variant as failed when transformer raises" do
+    it "marks variant as failed and enqueues retry on first failure" do
       variant = @user.avatar.variant(:thumb_failing)
 
       expect {
         ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_failing)
-      }.to raise_error("ffmpeg exited with status 1")
-
-      expect(variant.failed?).to be true
-      expect(variant.error).to eq("ffmpeg exited with status 1")
-    end
-
-    it "tracks attempt count" do
-      variant = @user.avatar.variant(:thumb_failing)
-
-      expect {
-        ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_failing)
-      }.to raise_error(RuntimeError)
-
-      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
-      expect(record.attempts).to eq(1)
-    end
-
-    it "re-raises to allow retry when under max_retries" do
-      variant = @user.avatar.variant(:thumb_failing)
-
-      expect {
-        ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_failing)
-      }.to raise_error(RuntimeError)
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
 
       record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
       expect(record.attempts).to eq(1)
       expect(record.state).to eq("failed")
+      expect(record.error).to eq("ffmpeg exited with status 1")
     end
 
-    it "does not re-raise when max_retries is exceeded" do
+    it "permanently fails after exhausting retries" do
       variant = @user.avatar.variant(:thumb_failing)
-      # Pre-create a record with attempts already at the max (max_retries: 2)
-      create_variant_record(variant, state: "failed")
-      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
-      record.update!(attempts: 2)
 
-      expect {
+      perform_enqueued_jobs do
         ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_failing)
-      }.not_to raise_error
+      end
 
-      record.reload
+      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
       expect(record.attempts).to eq(3)
       expect(record.state).to eq("failed")
     end

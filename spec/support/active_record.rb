@@ -115,7 +115,7 @@ RSpec.configure do |config|
         attachable.variant :thumb_blank, resize_to_limit: [100, 100], fallback: :blank
         attachable.variant :thumb_custom, resize_to_limit: [100, 100], fallback: ->(blob) { "/placeholders/processing.svg" }
         attachable.variant :thumb_inline, transformer: CopyTransformer, fallback: :original
-        attachable.variant :thumb_failing, transformer: FailingTransformer, fallback: :original, max_retries: 2
+        attachable.variant :thumb_failing, transformer: FailingTransformer, fallback: :original
         attachable.variant :thumb_external, transformer: FakeExternalTransformer, fallback: :original
       end
     end
