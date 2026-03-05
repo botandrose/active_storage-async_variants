@@ -32,10 +32,11 @@ module ActiveStorage
     end
 
     def self.callback_url_for(variant_record)
+      url_options = ActiveStorage::Current.url_options || Rails.application.default_url_options
       token = callback_token_for(variant_record)
       Rails.application.routes.url_helpers.active_storage_async_variant_callback_url(
         token: token,
-        **ActiveStorage::Current.url_options,
+        **url_options,
       )
     end
   end
