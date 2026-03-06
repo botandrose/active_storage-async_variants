@@ -215,44 +215,27 @@ RSpec.describe "async variants" do
     end
   end
 
-  describe "variant.processed with transformer" do
-    it "processes inline transformer directly without ProcessJob" do
+  describe "variant.processed" do
+    it "does not trigger processing for async variants" do
       variant = @user.avatar.variant(:thumb_inline)
 
       variant.processed
 
-      expect(variant.ready?).to be true
-      expect(variant.url).to end_with("/copy.png")
+      expect(variant.pending?).to be true
     end
 
-    it "initiates external transformer directly without ProcessJob" do
-      FakeExternalTransformer.last_call = nil
-      variant = @user.avatar.variant(:thumb_external)
+    it "delegates to standard ActiveStorage for non-async variants" do
+      variant = @user.avatar.variant(:thumb_sync)
+
+      allow_any_instance_of(ActiveStorage::Variation).to receive(:transform) do |_variation, input, &block|
+        block.call(input)
+      end
 
       variant.processed
 
-      expect(FakeExternalTransformer.last_call).to be_present
-      expect(FakeExternalTransformer.last_call[:source_url]).to be_present
-      expect(FakeExternalTransformer.last_call[:callback_url]).to be_present
-      expect(variant.processing?).to be true
-    end
-
-    it "skips processing when variant is already processing" do
-      variant = @user.avatar.variant(:thumb_inline)
-      create_variant_record(variant, state: "processing")
-
-      variant.processed
-
-      expect(variant.processing?).to be true
-    end
-
-    it "skips processing when variant is already processed" do
-      variant = @user.avatar.variant(:thumb_inline)
-      simulate_processed_variant(variant)
-
-      variant.processed
-
-      expect(variant.ready?).to be true
+      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      expect(record).to be_present
+      expect(record.image).to be_attached
     end
   end
 
@@ -270,20 +253,26 @@ RSpec.describe "async variants" do
 
     before { FakePreviewTransformer.process_preview_called = false }
 
-    it "delegates to transformer.process_preview" do
+    it "does not trigger processing via processed" do
       preview.processed
+
+      expect(FakePreviewTransformer.process_preview_called).to be false
+    end
+
+    it "delegates to transformer.process_preview via process" do
+      preview.process
 
       expect(FakePreviewTransformer.process_preview_called).to be true
     end
 
     it "reports processed after transformer completes" do
-      preview.processed
+      preview.process
 
       expect(preview.processed?).to be true
     end
 
     it "serves the variant URL when processed" do
-      preview.processed
+      preview.process
 
       expect(preview.url).to be_present
       expect(preview.url).to end_with("/thumb.png")
@@ -316,16 +305,16 @@ RSpec.describe "async variants" do
     end
 
     it "does not call process_preview if preview_image already attached" do
-      preview.processed
+      preview.process
       FakePreviewTransformer.process_preview_called = false
 
-      preview.processed
+      preview.process
 
       expect(FakePreviewTransformer.process_preview_called).to be false
     end
 
     it "returns variant blob key when processed" do
-      preview.processed
+      preview.process
 
       expect(preview.key).to be_present
     end
@@ -363,21 +352,6 @@ RSpec.describe "async variants" do
     end
   end
 
-  describe "variant.processed without transformer" do
-    it "delegates to standard ActiveStorage processing" do
-      variant = @user.avatar.variant(:thumb)
-
-      allow_any_instance_of(ActiveStorage::Variation).to receive(:transform) do |_variation, input, &block|
-        block.call(input)
-      end
-
-      variant.processed
-
-      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
-      expect(record).to be_present
-      expect(record.image).to be_attached
-    end
-  end
 
   describe "non-async preview passthrough" do
     let(:blob) { @user.avatar.blob }

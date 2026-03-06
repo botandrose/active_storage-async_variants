@@ -4,7 +4,7 @@ module ActiveStorage
   module AsyncVariants
     module PreviewExtension
       def processed
-        async_preview? ? (process; self) : super
+        async_preview? ? self : super
       end
 
       def process
