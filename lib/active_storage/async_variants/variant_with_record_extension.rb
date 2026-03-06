@@ -12,7 +12,7 @@ module ActiveStorage
       end
 
       def process
-        if async? && !blob.service.is_a?(ActiveStorage::Service::DiskService) && (transformer_class = variation.async_options[:transformer])
+        if async? && blob.service.respond_to?(:bucket) && (transformer_class = variation.async_options[:transformer])
           process_with_transformer(transformer_class)
         else
           super
@@ -50,7 +50,7 @@ module ActiveStorage
       end
 
       def async_active?
-        async? && !blob.service.is_a?(ActiveStorage::Service::DiskService)
+        async? && blob.service.respond_to?(:bucket)
       end
 
       def async_record
