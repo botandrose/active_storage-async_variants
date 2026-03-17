@@ -19,9 +19,9 @@ RSpec.describe "async variants" do
   end
 
   describe "without fallback" do
-    it "returns nil when variant is not yet processed (standard behavior)" do
+    it "serves the original blob URL on cloud when variant is not yet processed" do
       variant = @user.avatar.variant(:thumb_sync)
-      expect(variant.url).to be_nil
+      expect(variant.url).to end_with("/image.png")
     end
   end
 
@@ -224,8 +224,18 @@ RSpec.describe "async variants" do
       expect(variant.pending?).to be true
     end
 
-    it "delegates to standard ActiveStorage for non-async variants" do
+    it "skips synchronous processing on cloud for non-async variants" do
       variant = @user.avatar.variant(:thumb_sync)
+      variant.processed
+
+      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      expect(record).to be_nil
+    end
+
+    it "delegates to standard ActiveStorage on disk storage" do
+      variant = @user.avatar.variant(:thumb_sync)
+      allow(variant.blob.service).to receive(:respond_to?).and_call_original
+      allow(variant.blob.service).to receive(:respond_to?).with(:bucket).and_return(false)
 
       allow_any_instance_of(ActiveStorage::Variation).to receive(:transform) do |_variation, input, &block|
         block.call(input)
@@ -236,6 +246,48 @@ RSpec.describe "async variants" do
       record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
       expect(record).to be_present
       expect(record.image).to be_attached
+    end
+  end
+
+  describe "URL-decoded variants" do
+    it "serves fallback by looking up named variant definition" do
+      named_variant = @user.avatar.variant(:thumb)
+      decoded_variation = ActiveStorage::Variation.decode(named_variant.variation.key)
+      url_decoded_variant = ActiveStorage::VariantWithRecord.new(@user.avatar.blob, decoded_variation)
+
+      expect(url_decoded_variant.variation.async_options).to eq({})
+      expect(url_decoded_variant.url).to end_with("/image.png")
+    end
+
+    it "serves the variant URL when ready" do
+      named_variant = @user.avatar.variant(:thumb)
+      simulate_processed_variant(named_variant)
+
+      decoded_variation = ActiveStorage::Variation.decode(named_variant.variation.key)
+      url_decoded_variant = ActiveStorage::VariantWithRecord.new(@user.avatar.blob, decoded_variation)
+
+      expect(url_decoded_variant.url).to end_with("/thumb.png")
+    end
+
+    it "returns self from processed without synchronous processing" do
+      named_variant = @user.avatar.variant(:thumb)
+      decoded_variation = ActiveStorage::Variation.decode(named_variant.variation.key)
+      url_decoded_variant = ActiveStorage::VariantWithRecord.new(@user.avatar.blob, decoded_variation)
+
+      result = url_decoded_variant.processed
+      expect(result).to eq(url_decoded_variant)
+    end
+
+    it "falls back to blob URL when no attachment exists (direct upload)" do
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: File.open("spec/support/fixtures/image.png"),
+        filename: "direct.png",
+        content_type: "image/png",
+      )
+      variation = ActiveStorage::Variation.wrap(resize_to_limit: [100, 100])
+      variant = ActiveStorage::VariantWithRecord.new(blob, variation)
+
+      expect(variant.url).to end_with("/direct.png")
     end
   end
 

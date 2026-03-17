@@ -4,12 +4,18 @@ module ActiveStorage
   module AsyncVariants
     module VariantWithRecordExtension
       def processed
-        async_active? ? self : super
+        blob.service.respond_to?(:bucket) ? self : super
       end
 
       def url(...)
-        if async_active? && !processed?
-          fallback_url(...)
+        if blob.service.respond_to?(:bucket) && !ready?
+          fallback = resolved_async_options[:fallback]
+          case fallback
+          when :original then blob.url(...)
+          when :blank then nil
+          when Proc then fallback.call(blob)
+          else blob.url(...)
+          end
         else
           super
         end
@@ -38,30 +44,33 @@ module ActiveStorage
       private
 
       def processed?
-        async_active? ? ready? : super
+        blob.service.respond_to?(:bucket) ? ready? : super
       end
 
-      def async?
-        variation.async_options[:fallback].present?
+      def resolved_async_options
+        return @resolved_async_options if defined?(@resolved_async_options)
+        @resolved_async_options = find_async_options
       end
 
-      def async_active?
-        async? && blob.service.respond_to?(:bucket)
+      def find_async_options
+        return variation.async_options if variation.async_options[:fallback].present?
+
+        target = variation.transformations.to_json
+
+        blob.attachments.each do |attachment|
+          attachment.send(:named_variants).each do |name, _|
+            candidate = attachment.variant(name.to_sym)
+            if candidate.variation.transformations.to_json == target
+              return candidate.variation.async_options if candidate.variation.async_options[:fallback].present?
+            end
+          end
+        end
+
+        {}
       end
 
       def async_record
         blob.variant_records.find_by(variation_digest: variation.digest)
-      end
-
-      def fallback_url(...)
-        case variation.async_options[:fallback]
-        when :original
-          blob.url(...)
-        when :blank
-          nil
-        when Proc
-          variation.async_options[:fallback].call(blob)
-        end
       end
     end
   end
