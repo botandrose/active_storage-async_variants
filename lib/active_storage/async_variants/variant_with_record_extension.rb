@@ -4,7 +4,12 @@ module ActiveStorage
   module AsyncVariants
     module VariantWithRecordExtension
       def processed
-        blob.service.respond_to?(:bucket) ? self : super
+        if blob.service.respond_to?(:bucket)
+          enqueue_processing unless ready? || processing?
+          self
+        else
+          super
+        end
       end
 
       def url(...)
@@ -67,6 +72,30 @@ module ActiveStorage
         end
 
         {}
+      end
+
+      def enqueue_processing
+        attachment, variant_name = find_attachment_and_variant_name
+        return unless attachment && variant_name
+
+        ActiveStorage::AsyncVariants::ProcessJob.perform_later(
+          attachment.record, attachment.name, variant_name.to_s
+        )
+      end
+
+      def find_attachment_and_variant_name
+        target = variation.transformations.to_json
+
+        blob.attachments.each do |attachment|
+          attachment.send(:named_variants).each do |name, _|
+            candidate = attachment.variant(name.to_sym)
+            if candidate.variation.transformations.to_json == target
+              return [attachment, name] if candidate.variation.async_options[:fallback].present?
+            end
+          end
+        end
+
+        nil
       end
 
       def async_record

@@ -216,12 +216,32 @@ RSpec.describe "async variants" do
   end
 
   describe "variant.processed" do
-    it "does not trigger processing for async variants" do
+    it "enqueues a ProcessJob when variant is pending" do
       variant = @user.avatar.variant(:thumb_inline)
 
-      variant.processed
+      expect {
+        variant.processed
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
 
       expect(variant.pending?).to be true
+    end
+
+    it "does not enqueue a ProcessJob when variant is already processing" do
+      variant = @user.avatar.variant(:thumb_inline)
+      create_variant_record(variant, state: "processing")
+
+      expect {
+        variant.processed
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+    end
+
+    it "does not enqueue a ProcessJob when variant is already processed" do
+      variant = @user.avatar.variant(:thumb_inline)
+      simulate_processed_variant(variant)
+
+      expect {
+        variant.processed
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
     it "skips synchronous processing on cloud for non-async variants" do
@@ -269,13 +289,15 @@ RSpec.describe "async variants" do
       expect(url_decoded_variant.url).to end_with("/thumb.png")
     end
 
-    it "returns self from processed without synchronous processing" do
+    it "enqueues processing from processed" do
       named_variant = @user.avatar.variant(:thumb)
       decoded_variation = ActiveStorage::Variation.decode(named_variant.variation.key)
       url_decoded_variant = ActiveStorage::VariantWithRecord.new(@user.avatar.blob, decoded_variation)
 
-      result = url_decoded_variant.processed
-      expect(result).to eq(url_decoded_variant)
+      expect {
+        result = url_decoded_variant.processed
+        expect(result).to eq(url_decoded_variant)
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
     it "falls back to blob URL when no attachment exists (direct upload)" do
