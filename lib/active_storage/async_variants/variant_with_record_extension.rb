@@ -59,38 +59,27 @@ module ActiveStorage
 
       def find_async_options
         return variation.async_options if variation.async_options[:fallback].present?
-
-        target = variation.transformations.to_json
-
-        blob.attachments.each do |attachment|
-          attachment.send(:named_variants).each do |name, _|
-            candidate = attachment.variant(name.to_sym)
-            if candidate.variation.transformations.to_json == target
-              return candidate.variation.async_options if candidate.variation.async_options[:fallback].present?
-            end
-          end
-        end
-
-        {}
+        find_named_async_variant&.last || {}
       end
 
       def enqueue_processing
-        attachment, variant_name = find_attachment_and_variant_name
-        return unless attachment && variant_name
+        result = find_named_async_variant
+        return unless result
+        attachment, variant_name, _ = result
 
         ActiveStorage::AsyncVariants::ProcessJob.perform_later(
           attachment.record, attachment.name, variant_name.to_s
         )
       end
 
-      def find_attachment_and_variant_name
+      def find_named_async_variant
         target = variation.transformations.to_json
 
         blob.attachments.each do |attachment|
           attachment.send(:named_variants).each do |name, _|
             candidate = attachment.variant(name.to_sym)
             if candidate.variation.transformations.to_json == target
-              return [attachment, name] if candidate.variation.async_options[:fallback].present?
+              return [attachment, name, candidate.variation.async_options] if candidate.variation.async_options[:fallback].present?
             end
           end
         end
