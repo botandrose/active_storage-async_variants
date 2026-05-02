@@ -4,6 +4,7 @@ require_relative "async_variants/version"
 require_relative "async_variants/transformer"
 require_relative "async_variants/variation_extension"
 require_relative "async_variants/variant_with_record_extension"
+require_relative "async_variants/variant_record_extension"
 require_relative "async_variants/preview_extension"
 require_relative "async_variants/attachment_extension"
 require_relative "async_variants/process_job"
@@ -17,6 +18,9 @@ module ActiveStorage
         )
         ActiveStorage::VariantWithRecord.prepend(
           ActiveStorage::AsyncVariants::VariantWithRecordExtension
+        )
+        ActiveStorage::VariantRecord.include(
+          ActiveStorage::AsyncVariants::VariantRecordExtension
         )
         ActiveStorage::Attachment.prepend(
           ActiveStorage::AsyncVariants::AttachmentExtension

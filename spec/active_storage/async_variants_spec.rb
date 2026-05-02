@@ -137,6 +137,32 @@ RSpec.describe "async variants" do
     end
   end
 
+  describe "touching attached records when variant becomes processed" do
+    it "touches the attachment's record when state transitions to processed" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+
+      expect { variant_record.update!(state: "processed") }
+        .to change { @user.reload.updated_at }
+    end
+
+    it "does not touch records on intermediate state transitions" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "pending")
+
+      expect { variant_record.update!(state: "processing") }
+        .not_to change { @user.reload.updated_at }
+    end
+
+    it "does not touch records when state is unchanged" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processed")
+
+      expect { variant_record.update!(error: "no-op") }
+        .not_to change { @user.reload.updated_at }
+    end
+  end
+
   describe "default transformer (no transformer: option)" do
     it "processes the variant using standard ActiveStorage processing" do
       variant = @user.avatar.variant(:thumb)
