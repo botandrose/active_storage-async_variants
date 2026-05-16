@@ -67,9 +67,25 @@ module ActiveStorage
         return unless result
         attachment, variant_name, _ = result
 
+        existing = async_record
+        if existing && existing.state != "failed"
+          return
+        end
+
+        if existing
+          existing.update!(state: "pending", error: nil)
+        else
+          blob.variant_records.create!(
+            variation_digest: variation.digest,
+            state: "pending",
+          )
+        end
+
         ActiveStorage::AsyncVariants::ProcessJob.perform_later(
-          attachment.record, attachment.name, variant_name.to_s
+          attachment.record, attachment.name, variant_name.to_s,
         )
+      rescue ActiveRecord::RecordNotUnique
+        # another caller won the race; their job will handle processing
       end
 
       def find_named_async_variant

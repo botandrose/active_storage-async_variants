@@ -270,6 +270,32 @@ RSpec.describe "async variants" do
       }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
+    it "only enqueues one ProcessJob across repeated calls before the job runs" do
+      variant = @user.avatar.variant(:thumb_inline)
+
+      expect {
+        4.times { variant.processed }
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob).exactly(:once)
+    end
+
+    it "creates a pending variant record on first call to dedupe further calls" do
+      variant = @user.avatar.variant(:thumb_inline)
+      variant.processed
+
+      record = variant.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      expect(record).to be_present
+      expect(record.state).to eq("pending")
+    end
+
+    it "re-enqueues a ProcessJob when the existing record is in failed state" do
+      variant = @user.avatar.variant(:thumb_inline)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      expect {
+        variant.processed
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+    end
+
     it "skips synchronous processing on cloud for non-async variants" do
       variant = @user.avatar.variant(:thumb_sync)
       variant.processed

@@ -111,7 +111,7 @@ RSpec.configure do |config|
     class User < ActiveRecord::Base
       has_one_attached :avatar do |attachable|
         attachable.variant :thumb, resize_to_limit: [100, 100], fallback: :original
-        attachable.variant :thumb_sync, resize_to_limit: [100, 100]
+        attachable.variant :thumb_sync, resize_to_limit: [200, 200]
         attachable.variant :thumb_blank, resize_to_limit: [100, 100], fallback: :blank
         attachable.variant :thumb_custom, resize_to_limit: [100, 100], fallback: ->(blob) { "/placeholders/processing.svg" }
         attachable.variant :thumb_inline, transformer: CopyTransformer, fallback: :original
