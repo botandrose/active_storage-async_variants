@@ -52,10 +52,10 @@ module ActiveStorage
       end
 
       def fallback_preview_url(...)
-        case variation.async_options[:fallback]
+        case variation.async_options[:processing]
         when :original then blob.url(...)
         when :blank then nil
-        when Proc then variation.async_options[:fallback].call(blob)
+        when Proc then variation.async_options[:processing].call(blob)
         end
       end
     end

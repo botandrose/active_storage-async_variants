@@ -10,7 +10,7 @@ RSpec.describe "async variants" do
     )
   end
 
-  describe "fallback: :original" do
+  describe "processing: :original" do
     it "serves the original URL when variant is not yet processed" do
       variant = @user.avatar.variant(:thumb)
       expect(variant.url).to be_present
@@ -18,24 +18,59 @@ RSpec.describe "async variants" do
     end
   end
 
-  describe "without fallback" do
+  describe "non-async variant" do
     it "serves the original blob URL on cloud when variant is not yet processed" do
       variant = @user.avatar.variant(:thumb_sync)
       expect(variant.url).to end_with("/image.png")
     end
   end
 
-  describe "fallback: :blank" do
+  describe "processing: :blank" do
     it "returns nil when variant is not yet processed" do
       variant = @user.avatar.variant(:thumb_blank)
       expect(variant.url).to be_nil
     end
   end
 
-  describe "fallback: Proc" do
+  describe "processing: Proc" do
     it "calls the proc when variant is not yet processed" do
       variant = @user.avatar.variant(:thumb_custom)
       expect(variant.url).to eq("/placeholders/processing.svg")
+    end
+  end
+
+  describe "failed:" do
+    it "serves the processing placeholder while pending" do
+      variant = @user.avatar.variant(:thumb_with_error_image)
+      expect(variant.url).to end_with("/image.png")
+    end
+
+    it "serves the failed: string URL when the variant is failed" do
+      variant = @user.avatar.variant(:thumb_with_error_image)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      expect(variant.url).to eq("/icons/broken.svg")
+    end
+
+    it "calls a Proc failed: with the blob when failed" do
+      variant = @user.avatar.variant(:thumb_with_error_proc)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      expect(variant.url).to eq("/errors/image.png.svg")
+    end
+
+    it "returns nil for failed: :blank when failed" do
+      variant = @user.avatar.variant(:thumb_with_error_blank)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      expect(variant.url).to be_nil
+    end
+
+    it "falls back to the processing placeholder when failed: is not specified" do
+      variant = @user.avatar.variant(:thumb)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      expect(variant.url).to end_with("/image.png")
     end
   end
 
@@ -224,7 +259,7 @@ RSpec.describe "async variants" do
       }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob).at_least(:once)
     end
 
-    it "does not enqueue jobs for variants without fallback" do
+    it "does not enqueue jobs for non-async variants" do
       user = User.create!
 
       user.avatar.attach(
@@ -287,13 +322,13 @@ RSpec.describe "async variants" do
       expect(record.state).to eq("pending")
     end
 
-    it "re-enqueues a ProcessJob when the existing record is in failed state" do
+    it "does not re-enqueue once the record is in failed state — give up permanently" do
       variant = @user.avatar.variant(:thumb_inline)
       create_variant_record(variant, state: "failed", error: "boom")
 
       expect {
         variant.processed
-      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
     it "skips synchronous processing on cloud for non-async variants" do
@@ -372,7 +407,7 @@ RSpec.describe "async variants" do
       variation = ActiveStorage::Variation.wrap(
         resize_to_limit: [100, 100],
         transformer: FakePreviewTransformer,
-        fallback: :original,
+        processing: :original,
       )
       ActiveStorage::Preview.new(blob, variation)
     end
@@ -408,22 +443,22 @@ RSpec.describe "async variants" do
       expect(preview.url).to end_with("/image.png")
     end
 
-    it "returns nil for fallback: :blank" do
+    it "returns nil for processing: :blank" do
       variation = ActiveStorage::Variation.wrap(
         resize_to_limit: [100, 100],
         transformer: FakePreviewTransformer,
-        fallback: :blank,
+        processing: :blank,
       )
       blank_preview = ActiveStorage::Preview.new(blob, variation)
 
       expect(blank_preview.url).to be_nil
     end
 
-    it "calls proc for fallback: Proc" do
+    it "calls proc for processing: Proc" do
       variation = ActiveStorage::Variation.wrap(
         resize_to_limit: [100, 100],
         transformer: FakePreviewTransformer,
-        fallback: ->(_blob) { "/placeholders/video.svg" },
+        processing: ->(_blob) { "/placeholders/video.svg" },
       )
       custom_preview = ActiveStorage::Preview.new(blob, variation)
 

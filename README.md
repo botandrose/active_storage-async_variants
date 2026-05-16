@@ -19,7 +19,7 @@ bin/rails db:migrate
 
 ## Usage
 
-Add `fallback:` to any named variant to opt into the async pipeline:
+Add `processing:` to any named variant to opt into the async pipeline. The value is what to serve while the variant is being processed:
 
 ```ruby
 class User < ApplicationRecord
@@ -28,12 +28,12 @@ class User < ApplicationRecord
       transformer: VideoTranscoder,
       codec: "vp9",
       resolution: "720p",
-      fallback: :original
+      processing: :original
   end
 end
 ```
 
-The presence of `fallback:` is what opts a variant into async processing. Without it, variants behave exactly as they do in standard Active Storage. The `transformer:` option is independent -- you can use a custom transformer synchronously, or use the default transformer asynchronously:
+The presence of `processing:` is what opts a variant into async processing. Without it, variants behave exactly as they do in standard Active Storage. The `transformer:` option is independent -- you can use a custom transformer synchronously, or use the default transformer asynchronously:
 
 ```ruby
 has_one_attached :video do |attachable|
@@ -41,14 +41,14 @@ has_one_attached :video do |attachable|
   attachable.variant :web,
     transformer: VideoTranscoder,
     codec: "vp9",
-    fallback: :original
+    processing: :original
 
   # Async with default transformer (large image resize that's too slow for inline)
   attachable.variant :thumbnail,
     resize_to_limit: [200, 200],
-    fallback: :original
+    processing: :original
 
-  # Sync with custom transformer (fast custom processing, no fallback needed)
+  # Sync with custom transformer (fast custom processing, no opt-in needed)
   attachable.variant :watermarked,
     transformer: WatermarkStamper
 end
@@ -165,34 +165,35 @@ variant.failed?      # => true if permanently failed
 variant.error        # => error message string, or nil
 ```
 
-## Fallback Options
+## Placeholder Options
 
-The `fallback:` option controls what gets served while a variant is processing (or after it fails):
+The `processing:` option controls what gets served while a variant is being processed. The `failed:` option (optional) controls what gets served once the variant has permanently failed; if omitted, it defaults to the `processing:` value.
 
 ```ruby
-# Serve the original unprocessed file
-attachable.variant :web, fallback: :original
+# Serve the original unprocessed file while processing
+attachable.variant :web, processing: :original
 
 # Return nil -- let the view handle it
-attachable.variant :web, fallback: :blank
+attachable.variant :web, processing: :blank
 
-# Custom fallback
+# Static URL while processing
+attachable.variant :web, processing: "/placeholders/processing.svg"
+
+# Dynamic placeholder via Proc
 attachable.variant :web,
-  fallback: -> (blob) { "/placeholders/processing.svg" }
+  processing: -> (blob) { "/placeholders/processing.svg" }
+
+# Distinct placeholder when permanently failed
+attachable.variant :web,
+  processing: :original,
+  failed: "/icons/broken.svg"
 ```
+
+Both options accept the same set of values: `:original`, `:blank`, a String URL, or a Proc that receives the blob.
 
 ## Failure Handling
 
-By default, a variant is retried 3 times before being marked as permanently failed. Configure per-variant:
-
-```ruby
-attachable.variant :web,
-  transformer: VideoTranscoder,
-  codec: "vp9",
-  resolution: "720p",
-  fallback: :original,
-  max_retries: 5
-```
+A variant is retried up to 3 times before being marked as permanently failed. Once permanently failed, `.processed` no longer re-enqueues the job — the variant stays failed until you delete the `ActiveStorage::VariantRecord` row manually (or re-attach a fresh blob).
 
 Inspect failures:
 
@@ -213,15 +214,15 @@ variant.error   # => "ffmpeg exited with status 1: ..."
 5. The external service processes the file, uploads the result to the destination URL
 6. The external service POSTs to the callback URL with success/failure status
 7. The gem's callback endpoint transitions the `VariantRecord` to `processed` or `failed`
-8. When a view requests the variant URL, the gem checks state and serves the variant or the fallback
+8. When a view requests the variant URL, the gem checks state and serves the variant or the `processing:`/`failed:` placeholder
 
 ### Inline transformer flow
 
 1-3. Same as above
 4. The job calls the transformer's `process` method, blocking until complete
 5. On success, the output is uploaded, the `VariantRecord` transitions to `processed`
-6. On failure, the error is recorded and the job is re-enqueued (up to `max_retries`)
-7. When a view requests the variant URL, the gem checks state and serves the variant or the fallback
+6. On failure, the error is recorded and the job is re-enqueued (up to 3 attempts)
+7. When a view requests the variant URL, the gem checks state and serves the variant or the `processing:`/`failed:` placeholder
 
 ## License
 

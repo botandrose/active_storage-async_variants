@@ -110,13 +110,16 @@ RSpec.configure do |config|
 
     class User < ActiveRecord::Base
       has_one_attached :avatar do |attachable|
-        attachable.variant :thumb, resize_to_limit: [100, 100], fallback: :original
+        attachable.variant :thumb, resize_to_limit: [100, 100], processing: :original
         attachable.variant :thumb_sync, resize_to_limit: [200, 200]
-        attachable.variant :thumb_blank, resize_to_limit: [100, 100], fallback: :blank
-        attachable.variant :thumb_custom, resize_to_limit: [100, 100], fallback: ->(blob) { "/placeholders/processing.svg" }
-        attachable.variant :thumb_inline, transformer: CopyTransformer, fallback: :original
-        attachable.variant :thumb_failing, transformer: FailingTransformer, fallback: :original
-        attachable.variant :thumb_external, transformer: FakeExternalTransformer, fallback: :original
+        attachable.variant :thumb_blank, resize_to_limit: [100, 100], processing: :blank
+        attachable.variant :thumb_custom, resize_to_limit: [100, 100], processing: ->(blob) { "/placeholders/processing.svg" }
+        attachable.variant :thumb_inline, transformer: CopyTransformer, processing: :original
+        attachable.variant :thumb_failing, transformer: FailingTransformer, processing: :original
+        attachable.variant :thumb_with_error_image, resize_to_limit: [300, 300], processing: :original, failed: "/icons/broken.svg"
+        attachable.variant :thumb_with_error_proc, resize_to_limit: [400, 400], processing: :original, failed: ->(blob) { "/errors/#{blob.filename}.svg" }
+        attachable.variant :thumb_with_error_blank, resize_to_limit: [500, 500], processing: :original, failed: :blank
+        attachable.variant :thumb_external, transformer: FakeExternalTransformer, processing: :original
       end
     end
   end
