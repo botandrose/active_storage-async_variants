@@ -37,6 +37,12 @@ module ActiveStorage
         end
       end
 
+      def async_state
+        return nil unless async_preview?
+        return "pending" unless blob.preview_image.attached?
+        find_preview_variant_record&.state || "pending"
+      end
+
       private
 
       def async_preview?

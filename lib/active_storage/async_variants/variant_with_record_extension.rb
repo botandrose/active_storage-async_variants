@@ -47,6 +47,11 @@ module ActiveStorage
         async_record&.error
       end
 
+      def async_state
+        return nil unless blob.service.respond_to?(:bucket)
+        async_record&.state || "pending"
+      end
+
       private
 
       def processed?

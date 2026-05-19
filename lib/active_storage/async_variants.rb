@@ -8,6 +8,7 @@ require_relative "async_variants/variant_record_extension"
 require_relative "async_variants/preview_extension"
 require_relative "async_variants/attachment_extension"
 require_relative "async_variants/process_job"
+require_relative "async_variants/representations_redirect_controller_extension"
 
 module ActiveStorage
   module AsyncVariants
@@ -27,6 +28,9 @@ module ActiveStorage
         )
         ActiveStorage::Preview.prepend(
           ActiveStorage::AsyncVariants::PreviewExtension
+        )
+        ActiveStorage::Representations::RedirectController.prepend(
+          ActiveStorage::AsyncVariants::RepresentationsRedirectControllerExtension
         )
       end
     end

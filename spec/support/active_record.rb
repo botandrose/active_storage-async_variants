@@ -120,6 +120,7 @@ RSpec.configure do |config|
         attachable.variant :thumb_with_error_proc, resize_to_limit: [400, 400], processing: :original, failed: ->(blob) { "/errors/#{blob.filename}.svg" }
         attachable.variant :thumb_with_error_blank, resize_to_limit: [500, 500], processing: :original, failed: :blank
         attachable.variant :thumb_external, transformer: FakeExternalTransformer, processing: :original
+        attachable.variant :thumb_proc, resize_to_limit: [600, 600], processing: ->(_blob) { "/placeholders/processing.svg" }
       end
     end
   end

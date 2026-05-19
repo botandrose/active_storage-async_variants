@@ -572,4 +572,125 @@ RSpec.describe "async variants" do
       expect(record.state).to eq("failed")
     end
   end
+
+  describe "#async_state on VariantWithRecord" do
+    it "returns nil when the service does not respond to :bucket" do
+      variant = @user.avatar.variant(:thumb)
+      allow(variant.blob.service).to receive(:respond_to?).and_call_original
+      allow(variant.blob.service).to receive(:respond_to?).with(:bucket).and_return(false)
+
+      expect(variant.async_state).to be_nil
+    end
+
+    it "returns 'pending' when no variant record exists yet" do
+      variant = @user.avatar.variant(:thumb)
+
+      expect(variant.async_state).to eq("pending")
+    end
+
+    it "returns the underlying record's state when one exists" do
+      variant = @user.avatar.variant(:thumb)
+      create_variant_record(variant, state: "processing")
+
+      expect(variant.async_state).to eq("processing")
+    end
+  end
+
+  describe "#async_state on Preview" do
+    let(:blob) { @user.avatar.blob }
+
+    it "returns nil for non-async previews" do
+      variation = ActiveStorage::Variation.wrap(resize_to_limit: [100, 100])
+      preview = ActiveStorage::Preview.new(blob, variation)
+
+      expect(preview.async_state).to be_nil
+    end
+
+    it "returns 'pending' for an async preview that has not been processed" do
+      variation = ActiveStorage::Variation.wrap(
+        resize_to_limit: [100, 100],
+        transformer: FakePreviewTransformer,
+        processing: :original,
+      )
+      preview = ActiveStorage::Preview.new(blob, variation)
+
+      expect(preview.async_state).to eq("pending")
+    end
+
+    it "returns the preview variant record's state once processing has happened" do
+      variation = ActiveStorage::Variation.wrap(
+        resize_to_limit: [100, 100],
+        transformer: FakePreviewTransformer,
+        processing: :original,
+      )
+      preview = ActiveStorage::Preview.new(blob, variation)
+      preview.process
+
+      expect(preview.async_state).to eq("processed")
+    end
+  end
+
+  describe "RedirectController extension" do
+    def representation_url(variant)
+      Rails.application.routes.url_helpers.rails_blob_representation_url(
+        signed_blob_id: variant.blob.signed_id,
+        variation_key: variant.variation.key,
+        filename: variant.blob.filename,
+        host: "example.com",
+      )
+    end
+
+    let(:client) { ActionDispatch::Integration::Session.new(Rails.application) }
+
+    it "serves the configured public-path fallback inline with the async state header when pending" do
+      variant = @user.avatar.variant(:thumb_proc)
+
+      client.get representation_url(variant)
+
+      expect(client.response.status).to eq(200)
+      expect(client.response.headers["X-Async-Variant-State"]).to eq("pending")
+      expect(client.response.headers["Cache-Control"]).to include("no-store").and include("private")
+      expect(client.response.body).to include("<svg")
+    end
+
+    it "exposes the processing state on the header while the job is running" do
+      variant = @user.avatar.variant(:thumb_proc)
+      create_variant_record(variant, state: "processing")
+
+      client.get representation_url(variant)
+
+      expect(client.response.status).to eq(200)
+      expect(client.response.headers["X-Async-Variant-State"]).to eq("processing")
+    end
+
+    it "serves the failed: fallback inline with state=failed when the variant has failed" do
+      variant = @user.avatar.variant(:thumb_with_error_image)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      client.get representation_url(variant)
+
+      expect(client.response.status).to eq(200)
+      expect(client.response.headers["X-Async-Variant-State"]).to eq("failed")
+      expect(client.response.body).to include("<svg")
+    end
+
+    it "falls through to the standard redirect for processed variants" do
+      variant = @user.avatar.variant(:thumb_proc)
+      simulate_processed_variant(variant)
+
+      client.get representation_url(variant)
+
+      expect(client.response.status).to eq(302)
+      expect(client.response.headers["X-Async-Variant-State"]).to be_nil
+    end
+
+    it "falls through when the fallback resolves to a path that is not a public file" do
+      variant = @user.avatar.variant(:thumb)
+
+      client.get representation_url(variant)
+
+      expect(client.response.status).to eq(302)
+      expect(client.response.headers["X-Async-Variant-State"]).to be_nil
+    end
+  end
 end
