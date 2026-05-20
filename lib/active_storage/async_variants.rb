@@ -9,10 +9,21 @@ require_relative "async_variants/preview_extension"
 require_relative "async_variants/attachment_extension"
 require_relative "async_variants/process_job"
 require_relative "async_variants/representations_redirect_controller_extension"
+require_relative "async_variants/asset_tag_helper_extension"
 
 module ActiveStorage
   module AsyncVariants
+    mattr_accessor :cdn_host
+
     class Engine < ::Rails::Engine
+      # :nocov:
+      initializer "active_storage_async_variants.assets" do |app|
+        if app.config.respond_to?(:assets)
+          app.config.assets.precompile += %w[active_storage_async_variants.js]
+        end
+      end
+      # :nocov:
+
       config.after_initialize do
         ActiveStorage::Variation.prepend(
           ActiveStorage::AsyncVariants::VariationExtension
@@ -31,6 +42,9 @@ module ActiveStorage
         )
         ActiveStorage::Representations::RedirectController.prepend(
           ActiveStorage::AsyncVariants::RepresentationsRedirectControllerExtension
+        )
+        ActionView::Helpers::AssetTagHelper.prepend(
+          ActiveStorage::AsyncVariants::AssetTagHelperExtension
         )
       end
     end

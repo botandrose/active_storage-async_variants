@@ -693,4 +693,127 @@ RSpec.describe "async variants" do
       expect(client.response.headers["X-Async-Variant-State"]).to be_nil
     end
   end
+
+  describe "image_tag / video_tag async: and direct: options" do
+    let(:helper) do
+      view = ActionView::Base.with_empty_template_cache.new(ActionView::LookupContext.new([]), {}, nil)
+      view.singleton_class.include(Rails.application.routes.url_helpers)
+      view.define_singleton_method(:default_url_options) { { host: "example.com", protocol: "https" } }
+      view
+    end
+
+    let(:variant) { @user.avatar.variant(:thumb_proc) }
+
+    around do |example|
+      previous = ActiveStorage::AsyncVariants.cdn_host
+      ActiveStorage::AsyncVariants.cdn_host = nil
+      example.run
+      ActiveStorage::AsyncVariants.cdn_host = previous
+    end
+
+    it "passes through when neither async: nor direct: is given" do
+      html = helper.image_tag(variant, alt: "x")
+      expect(html).to include("src=")
+      expect(html).not_to include("data-async-variant")
+    end
+
+    it "passes through string sources untouched" do
+      html = helper.image_tag("https://example.com/foo.png", alt: "x")
+      expect(html).to include("src=\"https://example.com/foo.png\"")
+      expect(html).not_to include("data-async-variant")
+    end
+
+    it "raises ArgumentError when async: is given with a non-variant source" do
+      expect { helper.image_tag("foo.png", async: true) }.to raise_error(ArgumentError)
+    end
+
+    it "raises ArgumentError when direct: is given with a non-variant source" do
+      expect { helper.image_tag("foo.png", direct: true) }.to raise_error(ArgumentError)
+    end
+
+    it "wires up data attributes with async: true and state pending" do
+      html = helper.image_tag(variant, async: true, alt: "x")
+      expect(html).to include('data-controller="async-variant"')
+      expect(html).to include('data-async-variant-state-value="pending"')
+      expect(html).to include("data-async-variant-src-value")
+    end
+
+    it "reflects the processing state on data-async-variant-state-value" do
+      create_variant_record(variant, state: "processing")
+      html = helper.image_tag(variant, async: true)
+      expect(html).to include('data-async-variant-state-value="processing"')
+    end
+
+    it "reflects the failed state on data-async-variant-state-value" do
+      create_variant_record(variant, state: "failed", error: "boom")
+      html = helper.image_tag(variant, async: true)
+      expect(html).to include('data-async-variant-state-value="failed"')
+    end
+
+    it "reflects the processed state on data-async-variant-state-value" do
+      simulate_processed_variant(variant)
+      html = helper.image_tag(variant, async: true)
+      expect(html).to include('data-async-variant-state-value="processed"')
+    end
+
+    it "appends async-variant to any existing data-controller" do
+      html = helper.image_tag(variant, async: true, data: { controller: "other-thing" })
+      expect(html).to include('data-controller="other-thing async-variant"')
+    end
+
+    it "does not duplicate async-variant if the controller is already listed" do
+      html = helper.image_tag(variant, async: true, data: { controller: "async-variant other" })
+      expect(html).to include('data-controller="async-variant other"')
+    end
+
+    it "preserves other data: keys" do
+      html = helper.image_tag(variant, async: true, data: { rotate_target: "medium" })
+      expect(html).to include('data-rotate-target="medium"')
+    end
+
+    it "with direct: true and processed state, uses the storage service URL when no cdn_host" do
+      simulate_processed_variant(variant)
+      html = helper.image_tag(variant, direct: true)
+      expect(html).to include("/rails/active_storage/disk/")
+      expect(html).not_to include("/rails/active_storage/representations/")
+    end
+
+    it "with direct: true and a configured cdn_host, composes the CDN URL" do
+      ActiveStorage::AsyncVariants.cdn_host = "https://cdn.example.com"
+      simulate_processed_variant(variant)
+      html = helper.image_tag(variant, direct: true)
+      expect(html).to include("src=\"https://cdn.example.com/#{variant.key}\"")
+    end
+
+    it "with direct: true but variant not processed, falls back to the Rails representation URL" do
+      html = helper.image_tag(variant, direct: true)
+      expect(html).to include("/rails/active_storage/representations/")
+    end
+
+    it "with direct: true plus async: true and processed, sets src to direct and adds data attrs" do
+      ActiveStorage::AsyncVariants.cdn_host = "https://cdn.example.com"
+      simulate_processed_variant(variant)
+      html = helper.image_tag(variant, async: true, direct: true)
+      expect(html).to include("src=\"https://cdn.example.com/#{variant.key}\"")
+      expect(html).to include('data-async-variant-state-value="processed"')
+      expect(html).to include("data-async-variant-direct-value=\"https://cdn.example.com/#{variant.key}\"")
+    end
+
+    it "with direct: true plus async: true but not processed, does not set direct-value" do
+      html = helper.image_tag(variant, async: true, direct: true)
+      expect(html).not_to include("data-async-variant-direct-value")
+    end
+
+    it "video_tag wires up the same data attributes with async: true" do
+      html = helper.video_tag(variant, async: true, controls: true)
+      expect(html).to include("<video")
+      expect(html).to include('data-controller="async-variant"')
+      expect(html).to include('data-async-variant-state-value="pending"')
+    end
+
+    it "video_tag passes through without async/direct" do
+      html = helper.video_tag(variant, controls: true)
+      expect(html).not_to include("data-async-variant")
+    end
+  end
 end

@@ -62,6 +62,65 @@ In views, use the same Active Storage helpers:
 
 If the variant is still processing, this serves the original video. Once processing completes, it serves the transcoded variant.
 
+## `image_tag` / `video_tag` with `async:` and `direct:`
+
+For a polish layer that swaps in placeholder content while a variant is being processed, polls for completion in the background, and optionally serves the finished variant straight from your CDN, the gem adds two options to `image_tag` and `video_tag`:
+
+```erb
+<%# Variant URL with the async client wired up: spinner while pending,
+    polls for completion, swaps to the real image when ready. %>
+<%= image_tag user.avatar.variant(:web), async: true %>
+
+<%# When the variant is ready, render its direct CDN/S3 URL instead of
+    routing through Rails. While pending/failed, falls back to the
+    Rails representation URL (which serves the placeholder). %>
+<%= image_tag user.avatar.variant(:web), direct: true %>
+
+<%# Both together: direct URL once processed, placeholder while pending,
+    polling for completion. %>
+<%= image_tag user.avatar.variant(:web), async: true, direct: true %>
+
+<%# Same for videos. %>
+<%= video_tag user.video.variant(:web), async: true, controls: true %>
+```
+
+The first argument must be a `VariantWithRecord` or `Preview` when either option is set; otherwise `image_tag` / `video_tag` behave exactly as in stock Rails.
+
+### Configure the direct URL host
+
+By default `direct:` uses the storage service's URL (presigned for private buckets, unsigned for public). To serve from a CDN, set the host in an initializer:
+
+```ruby
+# config/initializers/active_storage_async_variants.rb
+ActiveStorage::AsyncVariants.cdn_host = "https://d1234abcd.cloudfront.net"
+```
+
+The resulting URL is `"#{cdn_host}/#{variant.key}"`.
+
+### Wiring the JavaScript
+
+The gem ships a dependency-free Stimulus-like controller at `app/assets/javascripts/active_storage_async_variants.js`. It is registered with the asset pipeline by the engine but not auto-imported. Wire it up the same way as `@rails/activestorage` -- pick whichever fits your bundler:
+
+Using **importmap-rails**:
+
+```ruby
+# config/importmap.rb
+pin "@active_storage/async_variants", to: "active_storage_async_variants.js", preload: true
+```
+
+```js
+// app/javascript/application.js
+import "@active_storage/async_variants"
+```
+
+Using **the asset pipeline** (sprockets/propshaft) with a classic `javascript_include_tag`:
+
+```erb
+<%= javascript_include_tag "active_storage_async_variants" %>
+```
+
+The module auto-starts on `DOMContentLoaded` and finds elements with `data-async-variant-state-value`. Opt out by setting `window.ActiveStorageAsyncVariants = null` before the script loads, then calling `start()` yourself from the exported module when ready.
+
 ## Writing a Transformer
 
 Transformers come in two flavors: **inline** (the job blocks until processing completes) and **external** (the job kicks off remote work and a webhook signals completion).
