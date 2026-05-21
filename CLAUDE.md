@@ -21,7 +21,7 @@ The gem works by prepending extension modules onto Active Storage classes:
 
 - **`VariationExtension`** → `ActiveStorage::Variation` — extracts async options (`processing:`, `failed:`, `transformer:`) from variant config before passing the rest to standard Active Storage
 - **`AttachmentExtension`** → `ActiveStorage::Attachment` — hooks into `transform_variants_later` to enqueue `ProcessJob` for variants with `processing:`
-- **`VariantWithRecordExtension`** → `ActiveStorage::VariantWithRecord` — overrides URL generation to serve the `processing:` (or `failed:`) placeholder while not ready; adds state query methods (`ready?`, `processing?`, `pending?`, `failed?`)
+- **`VariantWithRecordExtension`** → `ActiveStorage::VariantWithRecord` — overrides URL generation to serve the `processing:` (or `failed:`) placeholder while not ready; adds state query methods (`processed?`, `processing?`, `pending?`, `failed?`)
 - **`ProcessJob`** — background job that determines transformer type (inline vs external) and processes accordingly
 
 ### Transformer Types

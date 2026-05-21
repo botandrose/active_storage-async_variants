@@ -5,7 +5,7 @@ module ActiveStorage
     module VariantWithRecordExtension
       def processed
         if blob.service.respond_to?(:bucket)
-          enqueue_processing unless ready? || processing?
+          enqueue_processing unless processed? || processing?
           self
         else
           super
@@ -13,7 +13,7 @@ module ActiveStorage
       end
 
       def url(...)
-        if blob.service.respond_to?(:bucket) && !ready?
+        if blob.service.respond_to?(:bucket) && !processed?
           fallback = active_fallback
           case fallback
           when :original then blob.url(...)
@@ -27,8 +27,12 @@ module ActiveStorage
         end
       end
 
-      def ready?
-        async_record&.state == "processed"
+      def processed?
+        if blob.service.respond_to?(:bucket)
+          async_record&.state == "processed"
+        else
+          super
+        end
       end
 
       def processing?
@@ -53,10 +57,6 @@ module ActiveStorage
       end
 
       private
-
-      def processed?
-        blob.service.respond_to?(:bucket) ? ready? : super
-      end
 
       def resolved_async_options
         return @resolved_async_options if defined?(@resolved_async_options)

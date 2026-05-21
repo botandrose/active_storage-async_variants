@@ -217,7 +217,7 @@ The gem determines the mode by which method the transformer implements: `initiat
 ```ruby
 variant = user.video.variant(:web)
 
-variant.ready?       # => true if processed successfully
+variant.processed?   # => true if processed successfully
 variant.processing?  # => true if job is running or external service is working
 variant.pending?     # => true if job is enqueued
 variant.failed?      # => true if permanently failed

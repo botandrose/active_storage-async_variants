@@ -96,7 +96,7 @@ RSpec.describe "async variants" do
       variant = @user.avatar.variant(:thumb)
       expect(variant.pending?).to be true
       expect(variant.processing?).to be false
-      expect(variant.ready?).to be false
+      expect(variant.processed?).to be false
       expect(variant.failed?).to be false
       expect(variant.error).to be_nil
     end
@@ -107,17 +107,17 @@ RSpec.describe "async variants" do
 
       expect(variant.pending?).to be false
       expect(variant.processing?).to be true
-      expect(variant.ready?).to be false
+      expect(variant.processed?).to be false
       expect(variant.failed?).to be false
     end
 
-    it "reports ready when variant is processed" do
+    it "reports processed when variant is processed" do
       variant = @user.avatar.variant(:thumb)
       simulate_processed_variant(variant)
 
       expect(variant.pending?).to be false
       expect(variant.processing?).to be false
-      expect(variant.ready?).to be true
+      expect(variant.processed?).to be true
       expect(variant.failed?).to be false
     end
 
@@ -127,7 +127,7 @@ RSpec.describe "async variants" do
 
       expect(variant.pending?).to be false
       expect(variant.processing?).to be false
-      expect(variant.ready?).to be false
+      expect(variant.processed?).to be false
       expect(variant.failed?).to be true
       expect(variant.error).to eq("ffmpeg exited with status 1")
     end
@@ -209,7 +209,7 @@ RSpec.describe "async variants" do
 
       ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb)
 
-      expect(variant.ready?).to be true
+      expect(variant.processed?).to be true
     end
   end
 
@@ -220,7 +220,7 @@ RSpec.describe "async variants" do
 
       ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_inline)
 
-      expect(variant.ready?).to be true
+      expect(variant.processed?).to be true
       expect(variant.url).to be_present
       expect(variant.url).to end_with("/copy.png")
     end
