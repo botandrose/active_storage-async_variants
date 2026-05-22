@@ -187,12 +187,23 @@ RSpec.describe "async variants" do
     end
   end
 
-  describe "touching attached records when variant becomes processed" do
+  describe "touching attached records when variant reaches a terminal state" do
     it "touches the attachment's record when state transitions to processed" do
       variant = @user.avatar.variant(:thumb)
       variant_record = create_variant_record(variant, state: "processing")
 
       expect { variant_record.update!(state: "processed") }
+        .to change { @user.reload.updated_at }
+    end
+
+    it "touches the attachment's record when state transitions to failed" do
+      # Failed is also terminal: cached fragments that include data-async-
+      # variant-state-value="pending" need to be invalidated so the next
+      # render sees the new state.
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+
+      expect { variant_record.update!(state: "failed", error: "boom") }
         .to change { @user.reload.updated_at }
     end
 
@@ -455,6 +466,22 @@ RSpec.describe "async variants" do
     end
 
     it "serves the configured String fallback when not yet processed" do
+      expect(preview.url).to eq("/spinner.svg")
+    end
+
+    it "serves the failed: fallback URL when the variant has failed" do
+      named_variant = @user.avatar.variant(:thumb_preview_with_failed)
+      variation = named_variant.variation
+      create_variant_record(named_variant, state: "failed", error: "boom")
+      preview = ActiveStorage::Preview.new(blob, variation)
+
+      expect(preview.url).to eq("/icons/broken.svg")
+    end
+
+    it "falls back to processing: when failed: is not configured" do
+      # :thumb_preview (used above) has no failed: -- failed state should
+      # still serve the processing fallback rather than nil.
+      create_variant_record(named_variant, state: "failed", error: "boom")
       expect(preview.url).to eq("/spinner.svg")
     end
 

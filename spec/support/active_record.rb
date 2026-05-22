@@ -102,6 +102,8 @@ RSpec.configure do |config|
         attachable.variant :thumb_external, transformer: FakeExternalTransformer, processing: :original
         attachable.variant :thumb_proc, resize_to_limit: [600, 600], processing: ->(_blob) { "/placeholders/processing.svg" }
         attachable.variant :thumb_preview, resize_to_limit: [101, 101], transformer: FakePreviewTransformer, processing: "/spinner.svg"
+        attachable.variant :thumb_preview_with_failed, resize_to_limit: [102, 102], format: "png",
+          transformer: FakePreviewTransformer, processing: "/spinner.svg", failed: "/icons/broken.svg"
       end
     end
   end

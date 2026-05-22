@@ -90,12 +90,24 @@ module ActiveStorage
       end
 
       def fallback_preview_url(...)
-        case resolved_async_options[:processing]
+        case active_fallback
         when :original then blob.url(...)
         when :blank then nil
-        when Proc then resolved_async_options[:processing].call(blob)
-        when String then resolved_async_options[:processing]
+        when Proc then active_fallback.call(blob)
+        when String then active_fallback
         end
+      end
+
+      def active_fallback
+        if failed?
+          resolved_async_options.fetch(:failed) { resolved_async_options[:processing] }
+        else
+          resolved_async_options[:processing]
+        end
+      end
+
+      def failed?
+        find_preview_variant_record&.state == "failed"
       end
     end
   end
