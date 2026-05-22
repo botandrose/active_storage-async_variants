@@ -20,7 +20,7 @@ module ActiveStorage
           when :blank then nil
           when Proc then fallback.call(blob)
           when String then fallback
-          else blob.url(...)
+          else super
           end
         else
           super

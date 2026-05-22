@@ -19,9 +19,24 @@ RSpec.describe "async variants" do
   end
 
   describe "non-async variant" do
-    it "serves the original blob URL on cloud when variant is not yet processed" do
+    # A named variant declared with no async options is a standard sync
+    # variant. The gem must not intercept its URL with the source-blob URL --
+    # that would mean a thumb_variant call resolves to the originally uploaded
+    # blob. Defer to standard Rails behavior instead.
+    it "defers to standard Rails (returns nil for an unprocessed variant) instead of leaking the source blob URL" do
       variant = @user.avatar.variant(:thumb_sync)
-      expect(variant.url).to end_with("/image.png")
+      expect(variant.url).to be_nil
+    end
+  end
+
+  describe "VariantWithRecord with URL-reconstructed variation that matches no named variant" do
+    # Same invariant as the Preview case: a variation rebuilt from the URL
+    # may not match any of the blob's named variants. The gem must not fall
+    # back to the source blob URL in that case.
+    it "defers to super instead of returning the source blob URL" do
+      variation = ActiveStorage::Variation.wrap(resize_to_limit: [9999, 9999])
+      variant = ActiveStorage::VariantWithRecord.new(@user.avatar.blob, variation)
+      expect(variant.url).to be_nil
     end
   end
 
@@ -387,7 +402,7 @@ RSpec.describe "async variants" do
       }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
-    it "falls back to blob URL when no attachment exists (direct upload)" do
+    it "defers to standard Rails when no attachment exists to look up async config" do
       blob = ActiveStorage::Blob.create_and_upload!(
         io: File.open("spec/support/fixtures/image.png"),
         filename: "direct.png",
@@ -396,7 +411,7 @@ RSpec.describe "async variants" do
       variation = ActiveStorage::Variation.wrap(resize_to_limit: [100, 100])
       variant = ActiveStorage::VariantWithRecord.new(blob, variation)
 
-      expect(variant.url).to end_with("/direct.png")
+      expect(variant.url).to be_nil
     end
   end
 
