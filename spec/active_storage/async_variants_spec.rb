@@ -830,6 +830,26 @@ RSpec.describe "async variants" do
       expect(html).not_to include("data-async-variant")
     end
 
+    it "enqueues a ProcessJob for an unprocessed async variant so it can't sit pending forever" do
+      expect {
+        helper.image_tag(variant, async: true)
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+    end
+
+    it "is idempotent: no extra ProcessJob enqueued when a variant_record already exists" do
+      create_variant_record(variant, state: "pending")
+      expect {
+        helper.image_tag(variant, async: true)
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+    end
+
+    it "does not enqueue a ProcessJob when the variant is already processed" do
+      simulate_processed_variant(variant)
+      expect {
+        helper.image_tag(variant, async: true, direct: true)
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+    end
+
     it "passes through string sources untouched" do
       html = helper.image_tag("https://example.com/foo.png", alt: "x")
       expect(html).to include("src=\"https://example.com/foo.png\"")
