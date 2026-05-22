@@ -26,22 +26,25 @@ module ActiveStorage
       end
       # :nocov:
 
+      # Prepend the core model/reflection extensions before eager_load runs
+      # so that models' has_X_attached blocks (and the Variation.wrap calls
+      # they trigger via reflection.variant) go through our hooks. The
+      # :before_eager_load load_hook fires from the eager_load! initializer
+      # in finisher_hook, after all autoload paths have been set up but
+      # before any model class is loaded.
+      # :nocov:
+      ActiveSupport.on_load(:before_eager_load) do
+        ActiveStorage::AsyncVariants.prepend_model_extensions!
+      end
+      # :nocov:
+
       config.after_initialize do
-        ActiveStorage::Variation.prepend(
-          ActiveStorage::AsyncVariants::VariationExtension
-        )
-        ActiveStorage::VariantWithRecord.prepend(
-          ActiveStorage::AsyncVariants::VariantWithRecordExtension
-        )
-        ActiveStorage::VariantRecord.include(
-          ActiveStorage::AsyncVariants::VariantRecordExtension
-        )
-        ActiveStorage::Attachment.prepend(
-          ActiveStorage::AsyncVariants::AttachmentExtension
-        )
-        ActiveStorage::Preview.prepend(
-          ActiveStorage::AsyncVariants::PreviewExtension
-        )
+        # Idempotent — covers eager_load=false (dev/test) where the
+        # :before_eager_load hook never fires. Models autoload lazily on
+        # demand, and we just need the extensions in place by the time
+        # the first one loads.
+        ActiveStorage::AsyncVariants.prepend_model_extensions!
+
         ActiveStorage::Representations::RedirectController.prepend(
           ActiveStorage::AsyncVariants::RepresentationsRedirectControllerExtension
         )
@@ -49,18 +52,31 @@ module ActiveStorage
           ActiveStorage::AsyncVariants::AssetTagHelperExtension
         )
       end
+    end
 
-      # Prepend before model classes (which declare has_X_attached and call
-      # reflection.variant at class-load time) are loaded. config.after_initialize
-      # fires after eager_load and would miss those declarations.
-      initializer "active_storage_async_variants.reflection_extension" do
-        ActiveSupport.on_load(:active_record) do
-          require "active_storage/reflection"
-          ActiveStorage::Reflection::HasAttachedReflection.prepend(
-            ActiveStorage::AsyncVariants::ReflectionExtension
-          )
-        end
-      end
+    def self.prepend_model_extensions!
+      return if @model_extensions_prepended
+      @model_extensions_prepended = true
+
+      require "active_storage/reflection"
+      ActiveStorage::Reflection::HasAttachedReflection.prepend(
+        ActiveStorage::AsyncVariants::ReflectionExtension
+      )
+      ActiveStorage::Variation.prepend(
+        ActiveStorage::AsyncVariants::VariationExtension
+      )
+      ActiveStorage::VariantWithRecord.prepend(
+        ActiveStorage::AsyncVariants::VariantWithRecordExtension
+      )
+      ActiveStorage::VariantRecord.include(
+        ActiveStorage::AsyncVariants::VariantRecordExtension
+      )
+      ActiveStorage::Attachment.prepend(
+        ActiveStorage::AsyncVariants::AttachmentExtension
+      )
+      ActiveStorage::Preview.prepend(
+        ActiveStorage::AsyncVariants::PreviewExtension
+      )
     end
 
     def self.callback_token_for(variant_record)
