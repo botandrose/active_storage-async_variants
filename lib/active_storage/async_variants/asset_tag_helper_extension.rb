@@ -37,11 +37,11 @@ module ActiveStorage
           if direct && variant.async_state == "processed"
             direct_url(variant)
           else
-            # Trigger enqueue_processing for unprocessed named variants so a
-            # never-touched variant doesn't sit pending forever. Idempotent --
-            # no-op if a variant_record already exists. Skip Preview since
-            # its .processed may synchronously generate the preview image.
-            variant.processed if variant.is_a?(ActiveStorage::VariantWithRecord)
+            # Idempotent: enqueue ProcessJob if no record exists yet so a
+            # never-touched variant doesn't sit pending forever. Safe to call
+            # on both VariantWithRecord and Preview -- both paths now go
+            # through the same ProcessJob machinery.
+            variant.processed
             polymorphic_url(variant)
           end
         end

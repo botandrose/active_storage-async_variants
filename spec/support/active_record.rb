@@ -82,31 +82,11 @@ RSpec.configure do |config|
       end
     end
 
-    # A transformer that implements process_preview (inline preview generation)
-    class FakePreviewTransformer < ActiveStorage::AsyncVariants::Transformer
-      cattr_accessor :process_preview_called
-
-      def process_preview(blob:, variation:)
-        self.class.process_preview_called = true
-
-        preview_image_blob = ActiveStorage::Blob.create_and_upload!(
-          io: File.open("spec/support/fixtures/image.png"),
-          filename: "preview.png",
-          content_type: "image/png",
-          service_name: blob.service.name,
-        )
-        blob.preview_image.attach(preview_image_blob)
-
-        variant_record = preview_image_blob.variant_records.create_or_find_by!(variation_digest: variation.digest)
-        variant_record.image.attach(
-          io: File.open("spec/support/fixtures/image.png"),
-          filename: "thumb.png",
-          content_type: "image/png",
-          service_name: blob.service.name,
-        )
-        variant_record.update!(state: "processed")
-      end
-    end
+    # Inline transformer reused by Preview-side specs. ProcessJob runs its
+    # #process method and stores the result on the original blob's
+    # variant_records -- the same shape as Crucible-style external
+    # transformers, so Preview and VariantWithRecord lookups converge.
+    FakePreviewTransformer = CopyTransformer
 
     class User < ActiveRecord::Base
       has_one_attached :avatar do |attachable|

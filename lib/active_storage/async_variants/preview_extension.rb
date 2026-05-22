@@ -3,13 +3,14 @@
 module ActiveStorage
   module AsyncVariants
     module PreviewExtension
+      # Enqueue (or no-op if already done) the same ProcessJob the
+      # VariantWithRecord path uses, so Preview-side and VariantWithRecord-side
+      # processing converge on a single record-and-job machinery rather than
+      # the gem's earlier two-path design (one writing to preview_image's
+      # variant_records, one to the original blob's).
       def processed
-        async_preview? ? self : super
-      end
-
-      def process
         if async_preview?
-          resolved_async_options[:transformer].new.process_preview(blob: blob, variation: variation) unless blob.preview_image.attached?
+          enqueue_async_preview unless preview_variant_processed?
           self
         else
           super
@@ -39,7 +40,6 @@ module ActiveStorage
 
       def async_state
         return nil unless async_preview?
-        return "pending" unless blob.preview_image.attached?
         find_preview_variant_record&.state || "pending"
       end
 
@@ -61,11 +61,32 @@ module ActiveStorage
       end
 
       def preview_variant_processed?
-        blob.preview_image.attached? && find_preview_variant_record&.state == "processed"
+        find_preview_variant_record&.state == "processed"
       end
 
+      # ProcessJob stores variant_records on the source blob (i.e. @variant.blob,
+      # which for a named variant declared on a previewable attachment is the
+      # original blob -- not preview_image.blob). Read from the same place.
       def find_preview_variant_record
-        blob.preview_image.blob.variant_records.find_by(variation_digest: variation.digest)
+        blob.variant_records.find_by(variation_digest: variation.digest)
+      end
+
+      # Delegate to the named-variant VariantWithRecord so we go through the
+      # exact same enqueue_processing + ProcessJob machinery as direct
+      # variant calls. Skips silently if no matching named variant exists,
+      # which can happen for raw transformations that don't correspond to
+      # any declared async variant.
+      def enqueue_async_preview
+        target = variation.transformations.to_json
+        blob.attachments.each do |attachment|
+          attachment.send(:named_variants).each do |name, _|
+            candidate = attachment.variant(name.to_sym)
+            next unless candidate.variation.transformations.to_json == target
+            next unless candidate.variation.async_options[:processing].present?
+            candidate.processed
+            return
+          end
+        end
       end
 
       def fallback_preview_url(...)

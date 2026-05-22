@@ -417,45 +417,45 @@ RSpec.describe "async variants" do
 
   describe "async preview" do
     let(:blob) { @user.avatar.blob }
+    # :thumb_preview is declared on User#avatar as
+    #   resize_to_limit: [101, 101], format: "png",
+    #   transformer: FakePreviewTransformer, processing: "/spinner.svg"
+    # The Preview-side variation needs the same transformations so the
+    # named-variant lookup in PreviewExtension#enqueue_async_preview can
+    # match it and delegate to the corresponding VariantWithRecord.
+    let(:named_variant) { @user.avatar.variant(:thumb_preview) }
+    let(:variation) { named_variant.variation }
+    let(:preview) { ActiveStorage::Preview.new(blob, variation) }
 
-    let(:preview) do
-      variation = ActiveStorage::Variation.wrap(
-        resize_to_limit: [100, 100],
-        transformer: FakePreviewTransformer,
-        processing: :original,
-      )
-      ActiveStorage::Preview.new(blob, variation)
+    it "enqueues a ProcessJob via the matching named variant" do
+      expect {
+        preview.processed
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
-    before { FakePreviewTransformer.process_preview_called = false }
+    it "is idempotent when a variant_record already exists" do
+      create_variant_record(named_variant, state: "pending")
 
-    it "does not trigger processing via processed" do
-      preview.processed
-
-      expect(FakePreviewTransformer.process_preview_called).to be false
+      expect {
+        preview.processed
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
-    it "delegates to transformer.process_preview via process" do
-      preview.process
-
-      expect(FakePreviewTransformer.process_preview_called).to be true
-    end
-
-    it "reports processed after transformer completes" do
-      preview.process
-
+    it "reports processed? from the variant_record on the original blob" do
+      expect(preview.processed?).to be false
+      simulate_processed_variant(named_variant)
       expect(preview.processed?).to be true
     end
 
     it "serves the variant URL when processed" do
-      preview.process
+      simulate_processed_variant(named_variant)
 
       expect(preview.url).to be_present
       expect(preview.url).to end_with("/thumb.png")
     end
 
-    it "serves fallback URL when not yet processed" do
-      expect(preview.url).to end_with("/image.png")
+    it "serves the configured String fallback when not yet processed" do
+      expect(preview.url).to eq("/spinner.svg")
     end
 
     it "returns nil for processing: :blank" do
@@ -480,17 +480,8 @@ RSpec.describe "async variants" do
       expect(custom_preview.url).to eq("/placeholders/video.svg")
     end
 
-    it "does not call process_preview if preview_image already attached" do
-      preview.process
-      FakePreviewTransformer.process_preview_called = false
-
-      preview.process
-
-      expect(FakePreviewTransformer.process_preview_called).to be false
-    end
-
     it "returns variant blob key when processed" do
-      preview.process
+      simulate_processed_variant(named_variant)
 
       expect(preview.key).to be_present
     end
@@ -513,11 +504,6 @@ RSpec.describe "async variants" do
       }.to raise_error(NotImplementedError, /initiate/)
     end
 
-    it "raises NotImplementedError for process_preview" do
-      expect {
-        ActiveStorage::AsyncVariants::Transformer.new.process_preview(blob: nil, variation: nil)
-      }.to raise_error(NotImplementedError, /process_preview/)
-    end
   end
 
   describe "Variation with non-Hash input" do
@@ -534,8 +520,8 @@ RSpec.describe "async variants" do
     let(:variation) { ActiveStorage::Variation.wrap(resize_to_limit: [100, 100]) }
     let(:preview) { ActiveStorage::Preview.new(blob, variation) }
 
-    it "delegates process to standard ActiveStorage" do
-      expect { preview.process }.to raise_error(NoMethodError)
+    it "delegates processed to standard ActiveStorage" do
+      expect { preview.processed }.to raise_error(NoMethodError)
     end
 
     it "delegates url to standard ActiveStorage" do
@@ -544,6 +530,21 @@ RSpec.describe "async variants" do
 
     it "delegates key to standard ActiveStorage" do
       expect { preview.key }.to raise_error(ActiveStorage::Preview::UnprocessedError)
+    end
+  end
+
+  describe "async preview with processing: :original" do
+    let(:blob) { @user.avatar.blob }
+
+    it "returns the original blob URL while pending" do
+      variation = ActiveStorage::Variation.wrap(
+        resize_to_limit: [100, 100],
+        transformer: FakePreviewTransformer,
+        processing: :original,
+      )
+      preview = ActiveStorage::Preview.new(blob, variation)
+
+      expect(preview.url).to end_with("/image.png")
     end
   end
 
@@ -632,14 +633,12 @@ RSpec.describe "async variants" do
       expect(preview.async_state).to eq("pending")
     end
 
-    it "returns the preview variant record's state once processing has happened" do
-      variation = ActiveStorage::Variation.wrap(
-        resize_to_limit: [100, 100],
-        transformer: FakePreviewTransformer,
-        processing: :original,
-      )
+    it "returns the variant_record's state once processing has happened" do
+      named_variant = @user.avatar.variant(:thumb_preview)
+      simulate_processed_variant(named_variant)
+
+      variation = named_variant.variation
       preview = ActiveStorage::Preview.new(blob, variation)
-      preview.process
 
       expect(preview.async_state).to eq("processed")
     end
