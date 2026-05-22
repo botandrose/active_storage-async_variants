@@ -13,6 +13,7 @@ module ActiveStorage
           @async_options = {}
           super
         end
+        ActiveStorage::AsyncVariants::Registry.register(digest, @async_options) if @async_options[:processing].present?
       end
 
       def async_options

@@ -59,13 +59,10 @@ module ActiveStorage
       private
 
       def resolved_async_options
-        return @resolved_async_options if defined?(@resolved_async_options)
-        @resolved_async_options = find_async_options
-      end
-
-      def find_async_options
-        return variation.async_options if variation.async_options[:processing].present?
-        find_named_async_variant&.last || {}
+        @resolved_async_options ||=
+          variation.async_options.presence ||
+          ActiveStorage::AsyncVariants::Registry[variation.digest] ||
+          {}
       end
 
       def active_fallback
@@ -95,6 +92,10 @@ module ActiveStorage
         # another caller won the race; their job will handle processing
       end
 
+      # Cold-path scan: only used by enqueue_processing, which needs the
+      # (attachment.record, attachment.name, variant_name) tuple to dispatch
+      # ProcessJob -- more than the digest registry stores. Hot-path URL
+      # resolution goes through Registry, not this method.
       def find_named_async_variant
         target = variation.transformations.to_json
 

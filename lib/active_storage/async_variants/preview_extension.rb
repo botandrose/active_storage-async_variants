@@ -9,7 +9,7 @@ module ActiveStorage
 
       def process
         if async_preview?
-          variation.async_options[:transformer].new.process_preview(blob: blob, variation: variation) unless blob.preview_image.attached?
+          resolved_async_options[:transformer].new.process_preview(blob: blob, variation: variation) unless blob.preview_image.attached?
           self
         else
           super
@@ -46,7 +46,18 @@ module ActiveStorage
       private
 
       def async_preview?
-        variation.async_options[:transformer].present?
+        resolved_async_options[:transformer].present?
+      end
+
+      # Variations rebuilt from the redirect URL only carry transformations --
+      # :transformer / :processing / :failed are stripped at Variation#initialize
+      # and not embedded in the URL key. Recover them via the digest-keyed
+      # registry that VariationExtension warms on every view-side variant call.
+      def resolved_async_options
+        @resolved_async_options ||=
+          variation.async_options.presence ||
+          ActiveStorage::AsyncVariants::Registry[variation.digest] ||
+          {}
       end
 
       def preview_variant_processed?
@@ -58,10 +69,11 @@ module ActiveStorage
       end
 
       def fallback_preview_url(...)
-        case variation.async_options[:processing]
+        case resolved_async_options[:processing]
         when :original then blob.url(...)
         when :blank then nil
-        when Proc then variation.async_options[:processing].call(blob)
+        when Proc then resolved_async_options[:processing].call(blob)
+        when String then resolved_async_options[:processing]
         end
       end
     end

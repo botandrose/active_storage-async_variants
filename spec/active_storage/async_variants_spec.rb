@@ -645,6 +645,104 @@ RSpec.describe "async variants" do
     end
   end
 
+  describe "named-variant declaration eagerly warms the registry" do
+    # Ensures cold Puma workers can resolve URL-reconstructed variations
+    # without depending on having rendered a view that touches the named
+    # variant first.
+    it "registers async_options when has_X_attached declares a variant with :processing" do
+      Class.new(ActiveRecord::Base) do
+        self.table_name = "users"
+        has_one_attached :decl_warmed_photo do |a|
+          a.variant :decl_warmed,
+            resize_to_limit: [123, 123], format: "png",
+            transformer: FakePreviewTransformer,
+            processing: "/decl-warmed.svg"
+        end
+      end
+
+      # Compute the digest the controller would see (a Variation with no
+      # async_options, since the URL key strips them). Use except() rather
+      # than wrap() so we don't accidentally warm the registry ourselves.
+      lookup_digest = ActiveStorage::Variation.wrap(
+        resize_to_limit: [123, 123], format: "png",
+      ).digest
+
+      expect(ActiveStorage::AsyncVariants::Registry[lookup_digest])
+        .to include(processing: "/decl-warmed.svg")
+    end
+
+    it "does not register async_options for variants declared without :processing" do
+      Class.new(ActiveRecord::Base) do
+        self.table_name = "users"
+        has_one_attached :decl_sync_photo do |a|
+          a.variant :decl_sync, resize_to_limit: [124, 124], format: "png"
+        end
+      end
+
+      lookup_digest = ActiveStorage::Variation.wrap(
+        resize_to_limit: [124, 124], format: "png",
+      ).digest
+
+      expect(ActiveStorage::AsyncVariants::Registry[lookup_digest]).to be_nil
+    end
+  end
+
+  describe "Preview with URL-reconstructed variation (controller path)" do
+    # When the RedirectController resolves a representation from the URL, it
+    # rebuilds a Variation from the URL's variation_key. That key only carries
+    # transformations -- :transformer, :processing, :failed are stripped at
+    # Variation#initialize and not embedded in the URL. The gem must recover
+    # async_options by matching the rebuilt variation against the blob's
+    # attached named variants.
+    let(:blob) { @user.avatar.blob }
+    # Mirror what RedirectController does: take the encoded transformations
+    # from the source variant, then rebuild a Variation from them. The result
+    # has the same `transformations` (including default :format) but its
+    # `async_options` is empty -- :transformer / :processing are stripped at
+    # Variation#initialize and aren't in the URL key.
+    let(:source_variant) { @user.avatar.variant(:thumb_preview) }
+    let(:url_variation) { ActiveStorage::Variation.wrap(source_variant.variation.transformations) }
+    let(:preview) { ActiveStorage::Preview.new(blob, url_variation) }
+
+    it "starts with no async_options on the rebuilt variation" do
+      expect(url_variation.async_options).to eq({})
+    end
+
+    it "resolves async_state via lookup against the parent attachment's named variants" do
+      expect(preview.async_state).to eq("pending")
+    end
+
+    it "serves the named variant's String processing fallback while pending" do
+      expect(preview.url).to eq("/spinner.svg")
+    end
+
+    it "does not leak the preview_image blob URL when preview_image is attached" do
+      blob.preview_image.attach(
+        io: File.open("spec/support/fixtures/image.png"),
+        filename: "preview.png",
+        content_type: "image/png",
+        service_name: blob.service.name,
+      )
+
+      expect(preview.url).to eq("/spinner.svg")
+      expect(preview.url).not_to include(blob.preview_image.blob.key)
+    end
+  end
+
+  describe "Preview with String processing: fallback" do
+    let(:blob) { @user.avatar.blob }
+
+    it "returns the configured String when not yet processed" do
+      variation = ActiveStorage::Variation.wrap(
+        transformer: FakePreviewTransformer,
+        processing: "/icons/loading.svg",
+      )
+      preview = ActiveStorage::Preview.new(blob, variation)
+
+      expect(preview.url).to eq("/icons/loading.svg")
+    end
+  end
+
   describe "RedirectController extension" do
     def representation_url(variant)
       Rails.application.routes.url_helpers.rails_blob_representation_url(

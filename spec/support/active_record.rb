@@ -121,6 +121,7 @@ RSpec.configure do |config|
         attachable.variant :thumb_with_error_blank, resize_to_limit: [500, 500], processing: :original, failed: :blank
         attachable.variant :thumb_external, transformer: FakeExternalTransformer, processing: :original
         attachable.variant :thumb_proc, resize_to_limit: [600, 600], processing: ->(_blob) { "/placeholders/processing.svg" }
+        attachable.variant :thumb_preview, resize_to_limit: [101, 101], transformer: FakePreviewTransformer, processing: "/spinner.svg"
       end
     end
   end
@@ -130,6 +131,7 @@ RSpec.configure do |config|
     ActiveStorage::Attachment.delete_all
     ActiveStorage::VariantRecord.delete_all
     ActiveStorage::Blob.delete_all
+    ActiveStorage::AsyncVariants::Registry.clear
   end
 end
 

@@ -2,11 +2,13 @@
 
 require_relative "async_variants/version"
 require_relative "async_variants/transformer"
+require_relative "async_variants/registry"
 require_relative "async_variants/variation_extension"
 require_relative "async_variants/variant_with_record_extension"
 require_relative "async_variants/variant_record_extension"
 require_relative "async_variants/preview_extension"
 require_relative "async_variants/attachment_extension"
+require_relative "async_variants/reflection_extension"
 require_relative "async_variants/process_job"
 require_relative "async_variants/representations_redirect_controller_extension"
 require_relative "async_variants/asset_tag_helper_extension"
@@ -46,6 +48,18 @@ module ActiveStorage
         ActionView::Helpers::AssetTagHelper.prepend(
           ActiveStorage::AsyncVariants::AssetTagHelperExtension
         )
+      end
+
+      # Prepend before model classes (which declare has_X_attached and call
+      # reflection.variant at class-load time) are loaded. config.after_initialize
+      # fires after eager_load and would miss those declarations.
+      initializer "active_storage_async_variants.reflection_extension" do
+        ActiveSupport.on_load(:active_record) do
+          require "active_storage/reflection"
+          ActiveStorage::Reflection::HasAttachedReflection.prepend(
+            ActiveStorage::AsyncVariants::ReflectionExtension
+          )
+        end
       end
     end
 
