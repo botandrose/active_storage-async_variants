@@ -3,6 +3,7 @@
 require_relative "async_variants/version"
 require_relative "async_variants/transformer"
 require_relative "async_variants/registry"
+require_relative "async_variants/blob_extension"
 require_relative "async_variants/variation_extension"
 require_relative "async_variants/variant_with_record_extension"
 require_relative "async_variants/variant_record_extension"
@@ -61,6 +62,9 @@ module ActiveStorage
       require "active_storage/reflection"
       ActiveStorage::Reflection::HasAttachedReflection.prepend(
         ActiveStorage::AsyncVariants::ReflectionExtension
+      )
+      ActiveStorage::Blob.prepend(
+        ActiveStorage::AsyncVariants::BlobExtension
       )
       ActiveStorage::Variation.prepend(
         ActiveStorage::AsyncVariants::VariationExtension

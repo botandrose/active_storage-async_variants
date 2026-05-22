@@ -11,7 +11,7 @@ module ActiveStorage
       end
 
       def enqueue_async_variant_jobs
-        return unless blob.service.respond_to?(:bucket)
+        return unless blob.bucket_backed?
 
         named_variants.each do |name, named_variant|
           next unless named_variant.transformations.key?(:processing)

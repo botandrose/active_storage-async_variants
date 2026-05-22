@@ -4,7 +4,7 @@ module ActiveStorage
   module AsyncVariants
     module VariantWithRecordExtension
       def processed
-        if blob.service.respond_to?(:bucket)
+        if blob.bucket_backed?
           enqueue_processing unless processed? || processing?
           self
         else
@@ -13,7 +13,7 @@ module ActiveStorage
       end
 
       def url(...)
-        if blob.service.respond_to?(:bucket) && !processed?
+        if blob.bucket_backed? && !processed?
           fallback = active_fallback
           case fallback
           when :original then blob.url(...)
@@ -28,7 +28,7 @@ module ActiveStorage
       end
 
       def processed?
-        if blob.service.respond_to?(:bucket)
+        if blob.bucket_backed?
           async_record&.state == "processed"
         else
           super
@@ -52,7 +52,7 @@ module ActiveStorage
       end
 
       def async_state
-        return nil unless blob.service.respond_to?(:bucket)
+        return nil unless blob.bucket_backed?
         async_record&.state || "pending"
       end
 

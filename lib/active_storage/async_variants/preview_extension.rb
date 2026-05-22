@@ -75,8 +75,11 @@ module ActiveStorage
       # exact same enqueue_processing + ProcessJob machinery as direct
       # variant calls. Skips silently if no matching named variant exists,
       # which can happen for raw transformations that don't correspond to
-      # any declared async variant.
+      # any declared async variant. Also skipped on non-bucket services,
+      # where the gem defers to vanilla ActiveStorage and dispatching here
+      # would synchronously transform via vips (broken for video blobs).
       def enqueue_async_preview
+        return unless blob.bucket_backed?
         target = variation.transformations.to_json
         blob.attachments.each do |attachment|
           attachment.send(:named_variants).each do |name, _|

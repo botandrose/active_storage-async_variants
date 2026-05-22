@@ -38,10 +38,12 @@ module ActiveStorage
             direct_url(variant)
           else
             # Idempotent: enqueue ProcessJob if no record exists yet so a
-            # never-touched variant doesn't sit pending forever. Safe to call
-            # on both VariantWithRecord and Preview -- both paths now go
-            # through the same ProcessJob machinery.
-            variant.processed
+            # never-touched variant doesn't sit pending forever. Gated on
+            # bucket-backed services -- on Disk/Test the gem defers to
+            # vanilla ActiveStorage, and #processed would run a synchronous
+            # transform (e.g. vips on an mp4) that the external transformer
+            # is supposed to handle.
+            variant.processed if variant.blob.bucket_backed?
             polymorphic_url(variant)
           end
         end
