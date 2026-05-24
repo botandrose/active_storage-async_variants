@@ -71,9 +71,13 @@ async function poll(el) {
     if (s.pollCount < MAX_POLLS) schedulePoll(el)
     return
   }
-  if (state === "failed") return
+  if (state === "failed") {
+    el.setAttribute(STATE_ATTR, "failed")
+    return
+  }
   const target = directUrl(el) || srcUrl(el)
   if (!target) return
+  el.setAttribute(STATE_ATTR, "processed")
   el.src = target + (target.includes("?") ? "&" : "?") + "_t=" + Date.now()
 }
 
