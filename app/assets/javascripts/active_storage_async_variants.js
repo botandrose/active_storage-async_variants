@@ -35,7 +35,8 @@ function variantState(el) { return el.getAttribute(STATE_ATTR) }
 async function fetchAsyncState(url) {
   if (!url) return null
   try {
-    const response = await fetch(url, { method: "HEAD", redirect: "error", cache: "no-store" })
+    const response = await fetch(url, { method: "HEAD", redirect: "manual", cache: "no-store" })
+    if (response.type === "opaqueredirect") return null
     return response.headers.get(HEADER)
   } catch {
     return null
