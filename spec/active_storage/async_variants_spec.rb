@@ -245,6 +245,21 @@ RSpec.describe "async variants" do
       expect(variant_record.error).to eq("ffmpeg exited with status 1")
     end
 
+    it "truncates an oversized error payload to fit the column" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "failed", error: "x" * 100_000 },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      variant_record.reload
+      expect(variant_record.state).to eq("failed")
+      expect(variant_record.error.length).to eq(16_000)
+    end
+
     it "rejects requests with invalid tokens" do
       post "/active_storage/async_variants/callbacks/invalid-token",
         params: { status: "success" },

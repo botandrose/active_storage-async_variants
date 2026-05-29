@@ -12,7 +12,8 @@ module ActiveStorage
           variant_record.update!(state: "processed")
           apply_reported_metadata(variant_record, params)
         when "failed"
-          variant_record.update!(state: "failed", error: params[:error])
+          # error column is TEXT (64KB); utf8mb4 is up to 4 bytes/char, so cap at 16k chars.
+          variant_record.update!(state: "failed", error: params[:error].to_s.truncate(16_000))
         else
           head :unprocessable_entity and return
         end

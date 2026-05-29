@@ -31,7 +31,7 @@ module ActiveStorage
       rescue => e
         @variant_record&.update!(
           state: "failed",
-          error: e.message,
+          error: e.message.to_s.truncate(16_000),
           attempts: (@variant_record&.attempts || 0) + 1,
         )
         raise

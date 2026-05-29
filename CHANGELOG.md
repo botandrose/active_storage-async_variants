@@ -1,4 +1,8 @@
-## [Unreleased]
+## [0.3.1]
+
+- Bound the stored variant `error` to 16k chars at both write sites (the failed-status callback and `ProcessJob`'s rescue). An external transformer reporting a >64KB error payload was overflowing the `TEXT` column and 500ing the callback, leaving the variant stuck instead of marked failed.
+
+## [0.3.0]
 
 - Touch attached records when a variant transitions to processed, so consumer caches keyed on `cache_key_with_version` invalidate without needing manual cascading. Multi-hop cascades remain the consumer's responsibility via standard Rails `touch:` or `after_touch`.
 - Dedupe concurrent `.processed` calls so they enqueue at most one `ProcessJob` per blob+variation. Previously, every call before the first job flipped state to "processing" enqueued another job; each job created a fresh variant blob, leaving the others as orphans. The record is now created as `pending` at enqueue time, using the unique index on `active_storage_variant_records (blob_id, variation_digest)` (already shipped by the standard Active Storage migration) as the dedupe key. Once a record reaches `failed` (after `ProcessJob` exhausts its 3-attempt `retry_on` cycle), further `.processed` calls no longer re-enqueue — the variant is permanently failed.
