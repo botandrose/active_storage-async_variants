@@ -1,0 +1,4 @@
+<div class="async-variant-state async-variant-failed">
+  <% method = kind == :video ? :video_tag : :image_tag %>
+  <%= send method, async_variant_representation_path(variant), **html_options.symbolize_keys %>
+</div>

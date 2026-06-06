@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
+require "turbo-rails"
 require_relative "async_variants/version"
+require_relative "async_variants/helper"
 require_relative "async_variants/transformer"
 require_relative "async_variants/registry"
 require_relative "async_variants/blob_extension"
@@ -11,22 +13,22 @@ require_relative "async_variants/preview_extension"
 require_relative "async_variants/attachment_extension"
 require_relative "async_variants/reflection_extension"
 require_relative "async_variants/process_job"
-require_relative "async_variants/representations_redirect_controller_extension"
 require_relative "async_variants/asset_tag_helper_extension"
 
 module ActiveStorage
   module AsyncVariants
+    # HTML attributes round-tripped through the state-endpoint URL so the
+    # eventual processed-state render can apply them to the inner <img>/<video>.
+    PASS_THROUGH_HTML_OPTIONS = %i[alt width height controls autoplay preload].freeze
+
     mattr_accessor :cdn_host
 
-    class Engine < ::Rails::Engine
-      # :nocov:
-      initializer "active_storage_async_variants.assets" do |app|
-        if app.config.respond_to?(:assets)
-          app.config.assets.precompile += %w[active_storage_async_variants.js]
-        end
-      end
-      # :nocov:
+    # Lets the host app plug its auth chain (and thus `current_user`) into the
+    # gem's StatesController. Set to a string so resolution is deferred until
+    # the host's class is autoloadable. Defaults to ActionController::Base.
+    mattr_accessor :parent_controller, default: "ActionController::Base"
 
+    class Engine < ::Rails::Engine
       # Prepend the core model/reflection extensions before eager_load runs
       # so that models' has_X_attached blocks (and the Variation.wrap calls
       # they trigger via reflection.variant) go through our hooks. The
@@ -46,9 +48,6 @@ module ActiveStorage
         # the first one loads.
         ActiveStorage::AsyncVariants.prepend_model_extensions!
 
-        ActiveStorage::Representations::RedirectController.prepend(
-          ActiveStorage::AsyncVariants::RepresentationsRedirectControllerExtension
-        )
         ActionView::Helpers::AssetTagHelper.prepend(
           ActiveStorage::AsyncVariants::AssetTagHelperExtension
         )
@@ -56,9 +55,6 @@ module ActiveStorage
     end
 
     def self.prepend_model_extensions!
-      return if @model_extensions_prepended
-      @model_extensions_prepended = true
-
       require "active_storage/reflection"
       ActiveStorage::Reflection::HasAttachedReflection.prepend(
         ActiveStorage::AsyncVariants::ReflectionExtension

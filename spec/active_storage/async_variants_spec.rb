@@ -40,6 +40,48 @@ RSpec.describe "async variants" do
     end
   end
 
+  describe "VariantWithRecord on a preview_image blob with a cold Registry" do
+    # Simulates the production case: AS RepresentationsRedirectController
+    # resolves a request like /rails/active_storage/representations/redirect/
+    # <preview_blob>/<variation_key>/.... The preview blob has only a
+    # preview_image attachment (which has no named_variants), so the gem must
+    # walk one level back via preview_image -> source blob -> named variants
+    # to recover the configured fallback.
+    it "resolves :processing via the source blob's named variant" do
+      preview_blob = ActiveStorage::Blob.create_and_upload!(
+        io: File.open("spec/support/fixtures/image.png"),
+        filename: "preview.png",
+        content_type: "image/png",
+        service_name: "test",
+      )
+      @user.avatar.blob.preview_image.attach(preview_blob)
+      url_variation = ActiveStorage::Variation.wrap(
+        @user.avatar.variant(:thumb_preview).variation.transformations
+      )
+      ActiveStorage::AsyncVariants::Registry.clear
+
+      variant = ActiveStorage::VariantWithRecord.new(preview_blob, url_variation)
+
+      expect(variant.url).to eq("/spinner.svg")
+    end
+
+    it "keeps scanning when the source blob has no matching named variant" do
+      preview_blob = ActiveStorage::Blob.create_and_upload!(
+        io: File.open("spec/support/fixtures/image.png"),
+        filename: "preview.png",
+        content_type: "image/png",
+        service_name: "test",
+      )
+      @user.avatar.blob.preview_image.attach(preview_blob)
+      url_variation = ActiveStorage::Variation.wrap(resize_to_limit: [999, 999])
+      ActiveStorage::AsyncVariants::Registry.clear
+
+      variant = ActiveStorage::VariantWithRecord.new(preview_blob, url_variation)
+
+      expect(variant.send(:resolved_async_options)).to eq({})
+    end
+  end
+
   describe "processing: :blank" do
     it "returns nil when variant is not yet processed" do
       variant = @user.avatar.variant(:thumb_blank)
@@ -385,66 +427,15 @@ RSpec.describe "async variants" do
   end
 
   describe "variant.processed" do
-    it "enqueues a ProcessJob when variant is pending" do
+    it "is a no-op on cloud storage (no synchronous transform, no enqueue)" do
       variant = @user.avatar.variant(:thumb_inline)
 
       expect {
-        variant.processed
-      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
-
-      expect(variant.pending?).to be true
-    end
-
-    it "does not enqueue a ProcessJob when variant is already processing" do
-      variant = @user.avatar.variant(:thumb_inline)
-      create_variant_record(variant, state: "processing")
-
-      expect {
-        variant.processed
+        result = variant.processed
+        expect(result).to eq(variant)
       }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
-    end
 
-    it "does not enqueue a ProcessJob when variant is already processed" do
-      variant = @user.avatar.variant(:thumb_inline)
-      simulate_processed_variant(variant)
-
-      expect {
-        variant.processed
-      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
-    end
-
-    it "only enqueues one ProcessJob across repeated calls before the job runs" do
-      variant = @user.avatar.variant(:thumb_inline)
-
-      expect {
-        4.times { variant.processed }
-      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob).exactly(:once)
-    end
-
-    it "creates a pending variant record on first call to dedupe further calls" do
-      variant = @user.avatar.variant(:thumb_inline)
-      variant.processed
-
-      record = variant.blob.variant_records.find_by(variation_digest: variant.variation.digest)
-      expect(record).to be_present
-      expect(record.state).to eq("pending")
-    end
-
-    it "does not re-enqueue once the record is in failed state — give up permanently" do
-      variant = @user.avatar.variant(:thumb_inline)
-      create_variant_record(variant, state: "failed", error: "boom")
-
-      expect {
-        variant.processed
-      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
-    end
-
-    it "skips synchronous processing on cloud for non-async variants" do
-      variant = @user.avatar.variant(:thumb_sync)
-      variant.processed
-
-      record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
-      expect(record).to be_nil
+      expect(variant.blob.variant_records).to be_empty
     end
 
     it "delegates to standard ActiveStorage on disk storage" do
@@ -461,6 +452,45 @@ RSpec.describe "async variants" do
       record = @user.avatar.blob.variant_records.find_by(variation_digest: variant.variation.digest)
       expect(record).to be_present
       expect(record.image).to be_attached
+    end
+  end
+
+  describe "variant.enqueue!" do
+    it "enqueues a ProcessJob and creates a pending variant_record" do
+      variant = @user.avatar.variant(:thumb_inline)
+
+      expect {
+        variant.enqueue!
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+
+      record = variant.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      expect(record.state).to eq("pending")
+    end
+
+    it "is idempotent across repeated calls (RecordNotUnique guards dedupe)" do
+      variant = @user.avatar.variant(:thumb_inline)
+
+      expect {
+        4.times { variant.enqueue! }
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob).exactly(:once)
+    end
+
+    it "does not re-enqueue when a variant_record already exists (any state)" do
+      variant = @user.avatar.variant(:thumb_inline)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      expect {
+        variant.enqueue!
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+    end
+
+    it "is a no-op when no named variant matches the variation" do
+      variation = ActiveStorage::Variation.wrap(resize_to_limit: [9999, 9999])
+      variant = ActiveStorage::VariantWithRecord.new(@user.avatar.blob, variation)
+
+      expect {
+        variant.enqueue!
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
   end
 
@@ -484,14 +514,13 @@ RSpec.describe "async variants" do
       expect(url_decoded_variant.url).to end_with("/thumb.png")
     end
 
-    it "enqueues processing from processed" do
+    it "enqueues via enqueue! using the matching named variant declaration" do
       named_variant = @user.avatar.variant(:thumb)
       decoded_variation = ActiveStorage::Variation.decode(named_variant.variation.key)
       url_decoded_variant = ActiveStorage::VariantWithRecord.new(@user.avatar.blob, decoded_variation)
 
       expect {
-        result = url_decoded_variant.processed
-        expect(result).to eq(url_decoded_variant)
+        url_decoded_variant.enqueue!
       }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
@@ -514,15 +543,14 @@ RSpec.describe "async variants" do
     #   resize_to_limit: [101, 101], format: "png",
     #   transformer: FakePreviewTransformer, processing: "/spinner.svg"
     # The Preview-side variation needs the same transformations so the
-    # named-variant lookup in PreviewExtension#enqueue_async_preview can
-    # match it and delegate to the corresponding VariantWithRecord.
+    # named-variant lookup in PreviewExtension#enqueue! can match it.
     let(:named_variant) { @user.avatar.variant(:thumb_preview) }
     let(:variation) { named_variant.variation }
     let(:preview) { ActiveStorage::Preview.new(blob, variation) }
 
     it "enqueues a ProcessJob via the matching named variant" do
       expect {
-        preview.processed
+        preview.enqueue!
       }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
@@ -530,7 +558,7 @@ RSpec.describe "async variants" do
       create_variant_record(named_variant, state: "pending")
 
       expect {
-        preview.processed
+        preview.enqueue!
       }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
 
@@ -835,6 +863,15 @@ RSpec.describe "async variants" do
       expect(preview.url).to eq("/spinner.svg")
       expect(preview.url).not_to include(blob.preview_image.blob.key)
     end
+
+    it "resolves async_options via attachment scan when the Registry is cold" do
+      # Force the URL-reconstructed path to fall through to the
+      # find_named_async_variant_options walk by emptying the digest cache.
+      source_variant
+      ActiveStorage::AsyncVariants::Registry.clear
+
+      expect(preview.url).to eq("/spinner.svg")
+    end
   end
 
   describe "Preview with String processing: fallback" do
@@ -851,67 +888,79 @@ RSpec.describe "async variants" do
     end
   end
 
-  describe "RedirectController extension" do
-    def representation_url(variant)
-      Rails.application.routes.url_helpers.rails_blob_representation_url(
+  describe "StatesController" do
+    let(:client) { ActionDispatch::Integration::Session.new(Rails.application) }
+
+    def state_path(variant, kind: "image", direct: "0")
+      Rails.application.routes.url_helpers.async_variant_state_path(
         signed_blob_id: variant.blob.signed_id,
         variation_key: variant.variation.key,
-        filename: variant.blob.filename,
+        kind: kind,
+        direct: direct,
         host: "example.com",
       )
     end
 
-    let(:client) { ActionDispatch::Integration::Session.new(Rails.application) }
-
-    it "serves the configured public-path fallback inline with the async state header when pending" do
+    it "renders the processing partial when state is pending" do
       variant = @user.avatar.variant(:thumb_proc)
 
-      client.get representation_url(variant)
+      client.get state_path(variant)
 
       expect(client.response.status).to eq(200)
-      expect(client.response.headers["X-Async-Variant-State"]).to eq("pending")
-      expect(client.response.headers["Cache-Control"]).to include("no-store").and include("private")
-      expect(client.response.body).to include("<svg")
+      expect(client.response.body).to include("turbo-frame")
+      expect(client.response.body).to include("async-variant-processing")
+      # Inline self-poll: Turbo activates <script>s in frame swaps, so each
+      # pending/processing response schedules its own next reload.
+      expect(client.response.body).to match(/setTimeout.*reload.*3000/)
     end
 
-    it "exposes the processing state on the header while the job is running" do
+    it "renders the processing partial when state is processing" do
       variant = @user.avatar.variant(:thumb_proc)
       create_variant_record(variant, state: "processing")
 
-      client.get representation_url(variant)
+      client.get state_path(variant)
 
-      expect(client.response.status).to eq(200)
-      expect(client.response.headers["X-Async-Variant-State"]).to eq("processing")
+      expect(client.response.body).to include("async-variant-processing")
+      expect(client.response.body).to match(/setTimeout.*reload.*3000/)
     end
 
-    it "serves the failed: fallback inline with state=failed when the variant has failed" do
-      variant = @user.avatar.variant(:thumb_with_error_image)
+    it "renders the failed partial when state is failed" do
+      variant = @user.avatar.variant(:thumb_proc)
       create_variant_record(variant, state: "failed", error: "boom")
 
-      client.get representation_url(variant)
+      client.get state_path(variant)
 
-      expect(client.response.status).to eq(200)
-      expect(client.response.headers["X-Async-Variant-State"]).to eq("failed")
-      expect(client.response.body).to include("<svg")
+      expect(client.response.body).to include("async-variant-failed")
+      # Terminal state: no inline self-poll, so the chain stops.
+      expect(client.response.body).not_to match(/setTimeout.*reload/)
     end
 
-    it "falls through to the standard redirect for processed variants" do
+    it "renders the processed partial as an <img> when state is processed" do
       variant = @user.avatar.variant(:thumb_proc)
       simulate_processed_variant(variant)
 
-      client.get representation_url(variant)
+      client.get state_path(variant)
 
-      expect(client.response.status).to eq(302)
-      expect(client.response.headers["X-Async-Variant-State"]).to be_nil
+      expect(client.response.body).to include("<img")
+      expect(client.response.body).not_to match(/setTimeout.*reload/)
     end
 
-    it "falls through when the fallback resolves to a path that is not a public file" do
-      variant = @user.avatar.variant(:thumb)
+    it "renders the processed partial as a <video> when kind=video" do
+      variant = @user.avatar.variant(:thumb_proc)
+      simulate_processed_variant(variant)
 
-      client.get representation_url(variant)
+      client.get state_path(variant, kind: "video")
 
-      expect(client.response.status).to eq(302)
-      expect(client.response.headers["X-Async-Variant-State"]).to be_nil
+      expect(client.response.body).to include("<video")
+    end
+
+    it "404s for an invalid signed_blob_id" do
+      variant = @user.avatar.variant(:thumb_proc)
+      url = state_path(variant).sub(variant.blob.signed_id, "garbage")
+
+      client.get url
+
+      expect(client.response.status).to eq(404)
     end
   end
 
@@ -935,33 +984,13 @@ RSpec.describe "async variants" do
     it "passes through when neither async: nor direct: is given" do
       html = helper.image_tag(variant, alt: "x")
       expect(html).to include("src=")
-      expect(html).not_to include("data-async-variant")
-    end
-
-    it "enqueues a ProcessJob for an unprocessed async variant so it can't sit pending forever" do
-      expect {
-        helper.image_tag(variant, async: true)
-      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
-    end
-
-    it "is idempotent: no extra ProcessJob enqueued when a variant_record already exists" do
-      create_variant_record(variant, state: "pending")
-      expect {
-        helper.image_tag(variant, async: true)
-      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
-    end
-
-    it "does not enqueue a ProcessJob when the variant is already processed" do
-      simulate_processed_variant(variant)
-      expect {
-        helper.image_tag(variant, async: true, direct: true)
-      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+      expect(html).not_to include("turbo-frame")
     end
 
     it "passes through string sources untouched" do
       html = helper.image_tag("https://example.com/foo.png", alt: "x")
       expect(html).to include("src=\"https://example.com/foo.png\"")
-      expect(html).not_to include("data-async-variant")
+      expect(html).not_to include("turbo-frame")
     end
 
     it "raises ArgumentError when async: is given with a non-variant source" do
@@ -972,89 +1001,108 @@ RSpec.describe "async variants" do
       expect { helper.image_tag("foo.png", direct: true) }.to raise_error(ArgumentError)
     end
 
-    it "wires up data attributes with async: true and state pending" do
-      html = helper.image_tag(variant, async: true, alt: "x")
-      expect(html).to include('data-controller="async-variant"')
-      expect(html).to include('data-async-variant-state-value="pending"')
-      expect(html).to include("data-async-variant-src-value")
+    context "with async: true for a non-bucket-backed blob (Disk-only deployments)" do
+      it "emits a plain <img> (vanilla AS handles sync processing on Disk)" do
+        allow(variant.blob).to receive(:bucket_backed?).and_return(false)
+        html = helper.image_tag(variant, async: true)
+        expect(html).to include("<img")
+        expect(html).not_to include("turbo-frame")
+      end
     end
 
-    it "reflects the processing state on data-async-variant-state-value" do
-      create_variant_record(variant, state: "processing")
-      html = helper.image_tag(variant, async: true)
-      expect(html).to include('data-async-variant-state-value="processing"')
+    context "with async: true for a bucket-backed blob and an unprocessed variant" do
+      before do
+        allow(variant.blob).to receive(:bucket_backed?).and_return(true)
+      end
+
+      it "emits a <turbo-frame> pointing at the state endpoint" do
+        html = helper.image_tag(variant, async: true)
+        expect(html).to include("<turbo-frame")
+        expect(html).to include("/active_storage/async_variants/states/")
+        expect(html).to match(/id="async-variant-\d+-[A-Za-z0-9_-]+"/)
+      end
+
+      it "passes alt/width/height through opts[] in the state URL" do
+        html = helper.image_tag(variant, async: true, alt: "portrait", width: 120)
+        expect(html).to include("opts%5Balt%5D=portrait")
+        expect(html).to include("opts%5Bwidth%5D=120")
+      end
+
+      it "encodes kind=image for image_tag" do
+        html = helper.image_tag(variant, async: true)
+        expect(html).to include("kind=image")
+      end
+
+      it "video_tag encodes kind=video" do
+        html = helper.video_tag(variant, async: true, controls: true)
+        expect(html).to include("<turbo-frame")
+        expect(html).to include("kind=video")
+      end
+
+      it "prefills the turbo-frame with a placeholder <img> using the polymorphic URL" do
+        html = helper.image_tag(variant, async: true, alt: "portrait")
+        # Initial paint provides valid <img> markup so layout sizing works
+        # and consumers' tests that read img[:src] keep functioning. Turbo
+        # replaces this with the state partial on first frame fetch.
+        expect(html).to include("<img")
+        expect(html).to include('alt="portrait"')
+        expect(html).to match(%r{<img [^>]*src="[^"]*/rails/active_storage/representations/[^"]+"})
+      end
+
+      it "prefills the turbo-frame with a placeholder <video> for video_tag" do
+        html = helper.video_tag(variant, async: true, controls: true)
+        expect(html).to include("<video")
+        expect(html).to match(%r{<video [^>]*src="[^"]*/rails/active_storage/representations/[^"]+"})
+      end
     end
 
-    it "reflects the failed state on data-async-variant-state-value" do
-      create_variant_record(variant, state: "failed", error: "boom")
-      html = helper.image_tag(variant, async: true)
-      expect(html).to include('data-async-variant-state-value="failed"')
+    context "with async: true for a processed variant" do
+      before { simulate_processed_variant(variant) }
+
+      it "emits a plain <img> with the polymorphic URL (no turbo-frame)" do
+        html = helper.image_tag(variant, async: true)
+        expect(html).to include("<img")
+        expect(html).not_to include("turbo-frame")
+      end
+
+      it "with direct: true uses the direct CDN URL" do
+        ActiveStorage::AsyncVariants.cdn_host = "https://cdn.example.com"
+        html = helper.image_tag(variant, async: true, direct: true)
+        expect(html).to include("src=\"https://cdn.example.com/#{variant.key}\"")
+        expect(html).not_to include("turbo-frame")
+      end
+
+      it "video_tag emits a plain <video> with the resolved src (no turbo-frame)" do
+        html = helper.video_tag(variant, async: true, controls: true)
+        expect(html).to include("<video")
+        expect(html).not_to include("turbo-frame")
+      end
     end
 
-    it "reflects the processed state on data-async-variant-state-value" do
-      simulate_processed_variant(variant)
-      html = helper.image_tag(variant, async: true)
-      expect(html).to include('data-async-variant-state-value="processed"')
-    end
+    context "with direct: true only (no async:)" do
+      it "uses the storage service URL when processed and no cdn_host" do
+        simulate_processed_variant(variant)
+        html = helper.image_tag(variant, direct: true)
+        expect(html).to include("/rails/active_storage/disk/")
+      end
 
-    it "appends async-variant to any existing data-controller" do
-      html = helper.image_tag(variant, async: true, data: { controller: "other-thing" })
-      expect(html).to include('data-controller="other-thing async-variant"')
-    end
+      it "uses the configured cdn_host when processed" do
+        ActiveStorage::AsyncVariants.cdn_host = "https://cdn.example.com"
+        simulate_processed_variant(variant)
+        html = helper.image_tag(variant, direct: true)
+        expect(html).to include("src=\"https://cdn.example.com/#{variant.key}\"")
+      end
 
-    it "does not duplicate async-variant if the controller is already listed" do
-      html = helper.image_tag(variant, async: true, data: { controller: "async-variant other" })
-      expect(html).to include('data-controller="async-variant other"')
-    end
-
-    it "preserves other data: keys" do
-      html = helper.image_tag(variant, async: true, data: { rotate_target: "medium" })
-      expect(html).to include('data-rotate-target="medium"')
-    end
-
-    it "with direct: true and processed state, uses the storage service URL when no cdn_host" do
-      simulate_processed_variant(variant)
-      html = helper.image_tag(variant, direct: true)
-      expect(html).to include("/rails/active_storage/disk/")
-      expect(html).not_to include("/rails/active_storage/representations/")
-    end
-
-    it "with direct: true and a configured cdn_host, composes the CDN URL" do
-      ActiveStorage::AsyncVariants.cdn_host = "https://cdn.example.com"
-      simulate_processed_variant(variant)
-      html = helper.image_tag(variant, direct: true)
-      expect(html).to include("src=\"https://cdn.example.com/#{variant.key}\"")
-    end
-
-    it "with direct: true but variant not processed, falls back to the Rails representation URL" do
-      html = helper.image_tag(variant, direct: true)
-      expect(html).to include("/rails/active_storage/representations/")
-    end
-
-    it "with direct: true plus async: true and processed, sets src to direct and adds data attrs" do
-      ActiveStorage::AsyncVariants.cdn_host = "https://cdn.example.com"
-      simulate_processed_variant(variant)
-      html = helper.image_tag(variant, async: true, direct: true)
-      expect(html).to include("src=\"https://cdn.example.com/#{variant.key}\"")
-      expect(html).to include('data-async-variant-state-value="processed"')
-      expect(html).to include("data-async-variant-direct-value=\"https://cdn.example.com/#{variant.key}\"")
-    end
-
-    it "with direct: true plus async: true but not processed, does not set direct-value" do
-      html = helper.image_tag(variant, async: true, direct: true)
-      expect(html).not_to include("data-async-variant-direct-value")
-    end
-
-    it "video_tag wires up the same data attributes with async: true" do
-      html = helper.video_tag(variant, async: true, controls: true)
-      expect(html).to include("<video")
-      expect(html).to include('data-controller="async-variant"')
-      expect(html).to include('data-async-variant-state-value="pending"')
+      it "falls back to the Rails representation URL when not processed" do
+        html = helper.image_tag(variant, direct: true)
+        expect(html).to include("/rails/active_storage/representations/")
+      end
     end
 
     it "video_tag passes through without async/direct" do
       html = helper.video_tag(variant, controls: true)
-      expect(html).not_to include("data-async-variant")
+      expect(html).not_to include("turbo-frame")
     end
   end
+
 end

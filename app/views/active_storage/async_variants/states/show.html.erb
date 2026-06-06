@@ -1,0 +1,8 @@
+<%= turbo_frame_tag async_variant_frame_id(@variant) do %>
+  <%= render "active_storage/async_variants/states/#{@variant.async_state}", {
+    variant: @variant,
+    html_options: async_variant_html_options,
+    kind: async_variant_kind,
+    direct: async_variant_direct?,
+  } %>
+<% end %>

@@ -1,0 +1,5 @@
+<%
+  method = kind == :video ? :video_tag : :image_tag
+  src = direct ? async_variant_direct_url(variant) : async_variant_representation_path(variant)
+%>
+<%= send method, src, **html_options.symbolize_keys %>

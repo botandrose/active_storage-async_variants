@@ -3,18 +3,27 @@
 module ActiveStorage
   module AsyncVariants
     module PreviewExtension
-      # Enqueue (or no-op if already done) the same ProcessJob the
-      # VariantWithRecord path uses, so Preview-side and VariantWithRecord-side
-      # processing converge on a single record-and-job machinery rather than
-      # the gem's earlier two-path design (one writing to preview_image's
-      # variant_records, one to the original blob's).
+      # Block vanilla ActiveStorage's synchronous preview transform on
+      # async-backed services; rely on the auto-enqueue (AttachmentExtension)
+      # path -- and the public #enqueue! -- to dispatch ProcessJob.
       def processed
-        if async_preview?
-          enqueue_async_preview unless preview_variant_processed?
-          self
-        else
-          super
+        async_preview? ? self : super
+      end
+
+      def enqueue!
+        if result = find_named_async_variant
+          attachment, variant_name, _ = result
+
+          blob.variant_records.create!(
+            variation_digest: variation.digest,
+            state: "pending",
+          )
+          ActiveStorage::AsyncVariants::ProcessJob.perform_later(
+            attachment.record, attachment.name, variant_name.to_s,
+          )
         end
+      rescue ActiveRecord::RecordNotUnique
+        # another caller (or a leftover record) wins; their job handles it
       end
 
       def processed?
@@ -52,12 +61,27 @@ module ActiveStorage
       # Variations rebuilt from the redirect URL only carry transformations --
       # :transformer / :processing / :failed are stripped at Variation#initialize
       # and not embedded in the URL key. Recover them via the digest-keyed
-      # registry that VariationExtension warms on every view-side variant call.
+      # registry that VariationExtension warms on every view-side variant call,
+      # or fall back to scanning attached named variants when the registry is
+      # cold (autoloader hasn't touched the consumer model yet).
       def resolved_async_options
         @resolved_async_options ||=
           variation.async_options.presence ||
           ActiveStorage::AsyncVariants::Registry[variation.digest] ||
+          find_named_async_variant&.dig(2) ||
           {}
+      end
+
+      def find_named_async_variant
+        target = variation.transformations.to_json
+        blob.attachments.each do |attachment|
+          attachment.send(:named_variants).each do |name, _|
+            candidate = attachment.variant(name.to_sym)
+            next unless candidate.variation.transformations.to_json == target
+            return [attachment, name, candidate.variation.async_options] if candidate.variation.async_options[:transformer].present?
+          end
+        end
+        nil
       end
 
       def preview_variant_processed?
@@ -69,27 +93,6 @@ module ActiveStorage
       # original blob -- not preview_image.blob). Read from the same place.
       def find_preview_variant_record
         blob.variant_records.find_by(variation_digest: variation.digest)
-      end
-
-      # Delegate to the named-variant VariantWithRecord so we go through the
-      # exact same enqueue_processing + ProcessJob machinery as direct
-      # variant calls. Skips silently if no matching named variant exists,
-      # which can happen for raw transformations that don't correspond to
-      # any declared async variant. Also skipped on non-bucket services,
-      # where the gem defers to vanilla ActiveStorage and dispatching here
-      # would synchronously transform via vips (broken for video blobs).
-      def enqueue_async_preview
-        return unless blob.bucket_backed?
-        target = variation.transformations.to_json
-        blob.attachments.each do |attachment|
-          attachment.send(:named_variants).each do |name, _|
-            candidate = attachment.variant(name.to_sym)
-            next unless candidate.variation.transformations.to_json == target
-            next unless candidate.variation.async_options[:processing].present?
-            candidate.processed
-            return
-          end
-        end
       end
 
       def fallback_preview_url(...)

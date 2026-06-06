@@ -1,0 +1,6 @@
+<h1 id="page-marker">Avatar for user <%= @user.id %>, variant <%= @variant_name %></h1>
+<div id="thumb">
+  <a href="/sessions/<%= @user.id %>">
+    <%= image_tag @variant, async: true, alt: "avatar" %>
+  </a>
+</div>

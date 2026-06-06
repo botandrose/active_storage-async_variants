@@ -3,13 +3,27 @@
 module ActiveStorage
   module AsyncVariants
     module VariantWithRecordExtension
+      # Block vanilla ActiveStorage's synchronous transform on bucket-backed
+      # services; rely on the auto-enqueue (AttachmentExtension) path -- and the
+      # public #enqueue! -- to dispatch ProcessJob.
       def processed
-        if blob.bucket_backed?
-          enqueue_processing unless processed? || processing?
-          self
-        else
-          super
+        blob.bucket_backed? ? self : super
+      end
+
+      def enqueue!
+        if result = find_named_async_variant
+          attachment, variant_name, _ = result
+
+          blob.variant_records.create!(
+            variation_digest: variation.digest,
+            state: "pending",
+          )
+          ActiveStorage::AsyncVariants::ProcessJob.perform_later(
+            attachment.record, attachment.name, variant_name.to_s,
+          )
         end
+      rescue ActiveRecord::RecordNotUnique
+        # another caller (or a leftover record) wins; their job handles it
       end
 
       def url(...)
@@ -62,6 +76,7 @@ module ActiveStorage
         @resolved_async_options ||=
           variation.async_options.presence ||
           ActiveStorage::AsyncVariants::Registry[variation.digest] ||
+          find_named_async_variant&.dig(2) ||
           {}
       end
 
@@ -73,33 +88,29 @@ module ActiveStorage
         end
       end
 
-      def enqueue_processing
-        result = find_named_async_variant
-        return unless result
-        attachment, variant_name, _ = result
-
-        return if async_record
-
-        blob.variant_records.create!(
-          variation_digest: variation.digest,
-          state: "pending",
-        )
-
-        ActiveStorage::AsyncVariants::ProcessJob.perform_later(
-          attachment.record, attachment.name, variant_name.to_s,
-        )
-      rescue ActiveRecord::RecordNotUnique
-        # another caller won the race; their job will handle processing
-      end
-
-      # Cold-path scan: only used by enqueue_processing, which needs the
-      # (attachment.record, attachment.name, variant_name) tuple to dispatch
-      # ProcessJob -- more than the digest registry stores. Hot-path URL
-      # resolution goes through Registry, not this method.
+      # Cold-path scan: used by enqueue! (which needs the attachment +
+      # variant_name to dispatch ProcessJob) and by resolved_async_options as
+      # a fallback when the Registry is cold (e.g. in dev, when a
+      # RepresentationsRedirectController request hits a worker that hasn't
+      # autoloaded the consumer model yet).
+      #
+      # Walks one level through preview_image attachments so a request for
+      # a Variant of a video's extracted preview frame can still find the
+      # named variant declared on the parent record's source-video field.
       def find_named_async_variant
         target = variation.transformations.to_json
+        scan_for_named_variant(blob, target)
+      end
 
-        blob.attachments.each do |attachment|
+      def scan_for_named_variant(blob_to_scan, target, depth: 0)
+        blob_to_scan.attachments.each do |attachment|
+          if attachment.name == "preview_image" && attachment.record_type == "ActiveStorage::Blob" && depth < 1
+            source = ActiveStorage::Blob.find_by(id: attachment.record_id)
+            result = source && scan_for_named_variant(source, target, depth: depth + 1)
+            return result if result
+            next
+          end
+
           attachment.send(:named_variants).each do |name, _|
             candidate = attachment.variant(name.to_sym)
             if candidate.variation.transformations.to_json == target
@@ -107,7 +118,6 @@ module ActiveStorage
             end
           end
         end
-
         nil
       end
 

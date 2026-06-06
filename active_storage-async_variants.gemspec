@@ -29,4 +29,5 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "activestorage", ">= 7.2"
+  spec.add_dependency "turbo-rails", ">= 2.0"
 end
