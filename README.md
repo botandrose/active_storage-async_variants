@@ -97,29 +97,9 @@ ActiveStorage::AsyncVariants.cdn_host = "https://d1234abcd.cloudfront.net"
 
 The resulting URL is `"#{cdn_host}/#{variant.key}"`.
 
-### Wiring the JavaScript
+### JavaScript
 
-The gem ships a dependency-free Stimulus-like controller at `app/assets/javascripts/active_storage_async_variants.js`. It is registered with the asset pipeline by the engine but not auto-imported. Wire it up the same way as `@rails/activestorage` -- pick whichever fits your bundler:
-
-Using **importmap-rails**:
-
-```ruby
-# config/importmap.rb
-pin "@active_storage/async_variants", to: "active_storage_async_variants.js", preload: true
-```
-
-```js
-// app/javascript/application.js
-import "@active_storage/async_variants"
-```
-
-Using **the asset pipeline** (sprockets/propshaft) with a classic `javascript_include_tag`:
-
-```erb
-<%= javascript_include_tag "active_storage_async_variants" %>
-```
-
-The module auto-starts on `DOMContentLoaded` and finds elements with `data-async-variant-state-value`. Opt out by setting `window.ActiveStorageAsyncVariants = null` before the script loads, then calling `start()` yourself from the exported module when ready.
+No manual wiring is required. The async state partials are self-contained `<turbo-frame>`s. The only requirement is that the host app loads **Turbo** -- the gem depends on `turbo-rails`, which a default Rails app already includes.
 
 ## Writing a Transformer
 
