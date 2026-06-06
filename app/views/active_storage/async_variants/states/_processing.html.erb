@@ -1,6 +1,5 @@
 <div class="async-variant-state async-variant-processing">
-  <% method = kind == :video ? :video_tag : :image_tag %>
-  <%= send method, async_variant_representation_path(variant), **html_options.symbolize_keys %>
+  <%= image_tag async_variant_representation_path(variant), **html_options.symbolize_keys.except(:controls, :autoplay, :preload) %>
 </div>
 <%# Self-perpetuating poll: Turbo runs <script>s in frame swaps, so each
     pending/processing response schedules its own next reload. Terminal

@@ -78,20 +78,18 @@ RSpec.describe "async variants: view helpers" do
         expect(html).to include("kind=video")
       end
 
-      it "prefills the turbo-frame with a placeholder <img> using the polymorphic URL" do
+      it "renders an empty turbo-frame with no media placeholder" do
         html = helper.image_tag(variant, async: true, alt: "portrait")
-        # Initial paint provides valid <img> markup so layout sizing works
-        # and consumers' tests that read img[:src] keep functioning. Turbo
-        # replaces this with the state partial on first frame fetch.
-        expect(html).to include("<img")
-        expect(html).to include('alt="portrait"')
-        expect(html).to match(%r{<img [^>]*src="[^"]*/rails/active_storage/representations/[^"]+"})
+        expect(html).to include("<turbo-frame")
+        expect(html).not_to include("<img")
+        expect(html).to match(%r{<turbo-frame[^>]*></turbo-frame>})
       end
 
-      it "prefills the turbo-frame with a placeholder <video> for video_tag" do
+      it "renders an empty turbo-frame for video_tag too" do
         html = helper.video_tag(variant, async: true, controls: true)
-        expect(html).to include("<video")
-        expect(html).to match(%r{<video [^>]*src="[^"]*/rails/active_storage/representations/[^"]+"})
+        expect(html).to include("<turbo-frame")
+        expect(html).not_to include("<video")
+        expect(html).not_to include("<img")
       end
     end
 

@@ -33,10 +33,7 @@ module ActiveStorage
         assert_async_variant!(variant)
 
         if async && !async_variant_processed_inline?(variant)
-          async_variant_turbo_frame(variant, kind:, direct:, html_options: options) do
-            # populate TurboFrame with a placeholder image/video, so there's valid markup right away
-            yield [async_variant_representation_path(variant), *rest], options.except(:data)
-          end
+          async_variant_turbo_frame(variant, kind:, direct:, html_options: options)
         else
           yield [async_variant_resolved_src(variant, direct:), *rest], options
         end
@@ -48,13 +45,13 @@ module ActiveStorage
         end
       end
 
-      def async_variant_turbo_frame(variant, kind:, direct:, html_options:, &block)
+      def async_variant_turbo_frame(variant, kind:, direct:, html_options:)
         content_tag(
           :"turbo-frame",
+          "",
           id: async_variant_frame_id(variant),
           src: async_variant_frame_src(variant, kind: kind, direct: direct, html_options: html_options),
           refresh: "morph",
-          &block
         )
       end
     end

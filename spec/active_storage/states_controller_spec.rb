@@ -87,6 +87,28 @@ RSpec.describe "async variants: state endpoint" do
       expect(client.response.body).not_to match(/setTimeout.*reload/)
     end
 
+    # The processing/failed placeholders are always images (the spinner SVG /
+    # failed image), so they must render as <img> even for video variants.
+    it "renders the processing placeholder as an <img> even when kind=video" do
+      variant = @user.avatar.variant(:thumb_proc)
+      create_variant_record(variant, state: "processing")
+
+      client.get state_path(variant, kind: "video")
+
+      expect(client.response.body).to include("<img")
+      expect(client.response.body).not_to include("<video")
+    end
+
+    it "renders the failed placeholder as an <img> even when kind=video" do
+      variant = @user.avatar.variant(:thumb_proc)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      client.get state_path(variant, kind: "video")
+
+      expect(client.response.body).to include("<img")
+      expect(client.response.body).not_to include("<video")
+    end
+
     it "renders the processed partial as an <img> when state is processed" do
       variant = @user.avatar.variant(:thumb_proc)
       simulate_processed_variant(variant)
