@@ -1,3 +1,11 @@
+## [0.6.0]
+
+- External transforms can now report progress: a `progress` callback records the percent complete and a heartbeat, readable via `#progress` / `#progress_known?` on variants and previews.
+- Processing variants render a progress bar — indeterminate until progress is reported, then a determinate percentage — served as a cached asset. The turbo-frame poll interval now follows `heartbeat_interval` (default 5s) so each refresh lands on fresh progress.
+- A stalled external transform (no heartbeat within `heartbeat_stale_after`, default 60s) is now marked failed automatically — and therefore retryable — instead of hanging in "processing" forever.
+- Added an `ActiveStorage::AsyncVariants.configure { |config| … }` block for setting all options in one place (see the README's Configuration section).
+- Includes a migration adding the `progress` and `last_heartbeat_at` columns; run it before deploying.
+
 ## [0.5.0]
 
 - Added an opt-in retry affordance to the failed state: hovering a failed variant reveals a control that opens a dialog with the error and a "Retry processing" button that re-runs the transform. Disabled by default; enable it with `ActiveStorage::AsyncVariants.retry_visible_if { … }` (the block runs in the view context, so it can check `current_user`).
