@@ -14,6 +14,30 @@ Given /^the avatar's :(\w+) variant is in (pending|processing|processed|failed) 
   end
 end
 
+Given /^the avatar's :(\w+) variant has reported (\d+)% progress$/ do |variant_name, percent|
+  variant = @user.avatar.variant(variant_name.to_sym)
+  record = variant.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+  record.update!(progress: percent.to_i)
+end
+
+Then /^the frame should render a progress bar$/ do
+  expect(page).to have_css("turbo-frame progress-bar", visible: :all)
+end
+
+Then /^the progress bar should be indeterminate$/ do
+  expect(page).to have_css("turbo-frame progress-bar:not([percent])", visible: :all)
+end
+
+Then /^the progress bar should show (\d+)%$/ do |percent|
+  expect(page).to have_css(%(turbo-frame progress-bar[percent="#{percent}"]), visible: :all)
+end
+
+# Default (visible-only) matcher: passes only because the placeholder is hidden
+# via opacity (not visibility/display), so Capybara still sees it.
+Then /^the placeholder image should reserve layout$/ do
+  expect(page).to have_css("turbo-frame .async-variant-processing img")
+end
+
 Given /^the retry affordance is visible to everyone$/ do
   ActiveStorage::AsyncVariants.retry_visible_if { true }
 end

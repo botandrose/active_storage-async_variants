@@ -76,6 +76,26 @@ RSpec.describe "async variants: state endpoint and asset serving" do
       expect(client.response.body).to match(/setTimeout.*reload.*3000/)
     end
 
+    it "renders an indeterminate progress-bar when no progress is reported" do
+      variant = @user.avatar.variant(:thumb_proc)
+      create_variant_record(variant, state: "processing")
+
+      client.get state_path(variant)
+
+      expect(client.response.body).to include("<progress-bar")
+      expect(client.response.body).not_to match(/<progress-bar[^>]*percent=/)
+    end
+
+    it "renders a determinate progress-bar with the reported percent" do
+      variant = @user.avatar.variant(:thumb_proc)
+      record = create_variant_record(variant, state: "processing")
+      record.update!(progress: 42)
+
+      client.get state_path(variant)
+
+      expect(client.response.body).to match(/<progress-bar[^>]*percent="42"/)
+    end
+
     it "renders the failed partial when state is failed" do
       variant = @user.avatar.variant(:thumb_proc)
       create_variant_record(variant, state: "failed", error: "boom")
@@ -87,16 +107,16 @@ RSpec.describe "async variants: state endpoint and asset serving" do
       expect(client.response.body).not_to match(/setTimeout.*reload/)
     end
 
-    # The processing/failed placeholders are always images (the spinner SVG /
-    # failed image), so they must render as <img> even for video variants.
-    it "renders the processing placeholder as an <img> even when kind=video" do
+    # The (hidden) processing placeholder matches the eventual element so it
+    # reserves the right box -- a <video> for video variants, with the spinner over it.
+    it "renders a <video> placeholder for a video variant, not an <img>" do
       variant = @user.avatar.variant(:thumb_proc)
       create_variant_record(variant, state: "processing")
 
       client.get state_path(variant, kind: "video")
 
-      expect(client.response.body).to include("<img")
-      expect(client.response.body).not_to include("<video")
+      expect(client.response.body).to include("<video")
+      expect(client.response.body).not_to include("<img")
     end
 
     it "renders the failed placeholder as an <img> even when kind=video" do
