@@ -35,6 +35,10 @@ module ActiveStorage
     # watchdog fails it. Must exceed the transformer's heartbeat interval.
     mattr_accessor :heartbeat_stale_after, default: 60.seconds
 
+    # The transformer's heartbeat cadence. The turbo-frame poll matches it so
+    # each reload lands on fresh progress; keep heartbeat_stale_after well above it.
+    mattr_accessor :heartbeat_interval, default: 5.seconds
+
     # Gates the failed-state retry affordance; the block runs in the view context.
     def self.retry_visible_if(&block)
       self.retry_visible_proc = block

@@ -63,7 +63,7 @@ RSpec.describe "async variants: state endpoint and asset serving" do
       expect(client.response.body).to include("async-variant-processing")
       # Inline self-poll: Turbo activates <script>s in frame swaps, so each
       # pending/processing response schedules its own next reload.
-      expect(client.response.body).to match(/setTimeout.*reload.*3000/)
+      expect(client.response.body).to match(/setTimeout.*reload.*5000/)
     end
 
     it "renders the processing partial when state is processing" do
@@ -73,7 +73,7 @@ RSpec.describe "async variants: state endpoint and asset serving" do
       client.get state_path(variant)
 
       expect(client.response.body).to include("async-variant-processing")
-      expect(client.response.body).to match(/setTimeout.*reload.*3000/)
+      expect(client.response.body).to match(/setTimeout.*reload.*5000/)
     end
 
     it "renders an indeterminate progress-bar when no progress is reported" do

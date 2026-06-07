@@ -7,9 +7,10 @@
 
 <%= ActiveStorage::AsyncVariants.stylesheet_link_tag "progress" %>
 <%= ActiveStorage::AsyncVariants.javascript_include_tag "progress-bar", type: "module" %>
-<%# Self-perpetuating poll: Turbo runs <script>s in frame swaps, so each
-    pending/processing response schedules its own next reload. Terminal
-    partials (_failed, _processed) emit no script -> chain stops. %>
+<% interval_ms = ActiveStorage::AsyncVariants.heartbeat_interval.in_seconds * 1000 %>
 <script>
-  setTimeout(() => document.getElementById("<%= async_variant_frame_id(variant) %>")?.reload(), 3000)
+  (() => {
+    const frame = document.currentScript?.closest("turbo-frame")
+    setTimeout(() => frame?.reload(), <%= interval_ms %>)
+  })()
 </script>
