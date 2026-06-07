@@ -79,6 +79,13 @@ module ActiveStorage
           variant_record_id: variant_record.id,
           **options,
         )
+
+        # Seed the heartbeat so a transform that dies before its first heartbeat
+        # still goes stale, then arm the watchdog.
+        variant_record.touch(:last_heartbeat_at)
+        ActiveStorage::AsyncVariants::HeartbeatWatchdogJob
+          .set(wait: ActiveStorage::AsyncVariants.heartbeat_stale_after)
+          .perform_later(variant_record)
       end
     end
   end

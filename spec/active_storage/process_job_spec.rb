@@ -49,6 +49,17 @@ RSpec.describe "async variants: processing jobs" do
 
       expect(variant.processing?).to be true
     end
+
+    it "seeds the heartbeat and arms the watchdog" do
+      variant = @user.avatar.variant(:thumb_external)
+
+      expect {
+        ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external)
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::HeartbeatWatchdogJob)
+
+      record = variant.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      expect(record.last_heartbeat_at).to be_present
+    end
   end
 
   describe "base Transformer" do

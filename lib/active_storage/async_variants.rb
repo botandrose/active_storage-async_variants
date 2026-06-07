@@ -14,6 +14,7 @@ require_relative "async_variants/preview_extension"
 require_relative "async_variants/attachment_extension"
 require_relative "async_variants/reflection_extension"
 require_relative "async_variants/process_job"
+require_relative "async_variants/heartbeat_watchdog_job"
 require_relative "async_variants/asset_tag_helper_extension"
 
 module ActiveStorage
@@ -29,6 +30,10 @@ module ActiveStorage
     # gem's StatesController. Set to a string so resolution is deferred until
     # the host's class is autoloadable. Defaults to ActionController::Base.
     mattr_accessor :parent_controller, default: "ActionController::Base"
+
+    # How long an external transform may go without a heartbeat before the
+    # watchdog fails it. Must exceed the transformer's heartbeat interval.
+    mattr_accessor :heartbeat_stale_after, default: 60.seconds
 
     # Gates the failed-state retry affordance; the block runs in the view context.
     def self.retry_visible_if(&block)
