@@ -50,6 +50,10 @@ module ActiveStorage
       false
     end
 
+    def self.configure
+      yield self
+    end
+
     class Engine < ::Rails::Engine
       # Prepend the core model/reflection extensions before eager_load runs
       # so that models' has_X_attached blocks (and the Variation.wrap calls

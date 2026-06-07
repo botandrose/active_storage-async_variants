@@ -101,6 +101,29 @@ The resulting URL is `"#{cdn_host}/#{variant.key}"`.
 
 No manual wiring is required. The async state partials are self-contained `<turbo-frame>`s. The only requirement is that the host app loads **Turbo** -- the gem depends on `turbo-rails`, which a default Rails app already includes.
 
+## Configuration
+
+Set options in an initializer. The `configure` block groups them (each is also a plain accessor, e.g. `ActiveStorage::AsyncVariants.cdn_host = …`):
+
+```ruby
+# config/initializers/active_storage_async_variants.rb
+ActiveStorage::AsyncVariants.configure do |config|
+  config.cdn_host              = "https://d1234abcd.cloudfront.net"
+  config.heartbeat_interval    = 5.seconds
+  config.heartbeat_stale_after = 60.seconds
+  config.parent_controller     = "ApplicationController"
+  config.retry_visible_if { current_user&.admin? }
+end
+```
+
+| Option | Default | Purpose |
+|--------|---------|---------|
+| `cdn_host` | `nil` | Host for `direct:` URLs (`"#{cdn_host}/#{variant.key}"`); falls back to the storage service URL. |
+| `heartbeat_interval` | `5.seconds` | Expected cadence of progress heartbeats; the processing `<turbo-frame>` re-polls at this rate. |
+| `heartbeat_stale_after` | `60.seconds` | A processing variant with no heartbeat for this long is marked `failed`. Must exceed `heartbeat_interval`. |
+| `parent_controller` | `"ActionController::Base"` | Base class for the gem's controllers, so the retry view can reach your app's `current_user`. Set as a String. |
+| `retry_visible_if` | off | Block (run in the view context) gating the failed-state retry affordance. |
+
 ## Writing a Transformer
 
 Transformers come in two flavors: **inline** (the job blocks until processing completes) and **external** (the job kicks off remote work and a webhook signals completion).
