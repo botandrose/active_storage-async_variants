@@ -1,3 +1,7 @@
+## [0.5.0]
+
+- Added an opt-in retry affordance to the failed state: hovering a failed variant reveals a control that opens a dialog with the error and a "Retry processing" button that re-runs the transform. Disabled by default; enable it with `ActiveStorage::AsyncVariants.retry_visible_if { … }` (the block runs in the view context, so it can check `current_user`).
+
 ## [0.4.0]
 
 - **Breaking:** Replaced the polling-`<img>` architecture with a `<turbo-frame>` for unprocessed variants. `image_tag`/`video_tag` with `async: true` now emits a normal `<img>`/`<video>` when the variant is already processed, and a `<turbo-frame src="…">` otherwise. The frame hits a new gem-shipped endpoint (`GET /active_storage/async_variants/states/:signed_blob_id/:variation_key`) that renders one of `_processing`/`_failed`/`_processed` partials. Non-terminal renders include an inline `<script>` that schedules the frame's next reload, so the state polls itself until it terminates.
