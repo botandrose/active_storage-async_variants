@@ -85,6 +85,35 @@ RSpec.describe "async variants: callback endpoint" do
       expect(@user.avatar.blob.checksum).to eq(original_checksum)
     end
 
+    it "records progress and a heartbeat on a progress callback" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "progress", percent: "42" },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      variant_record.reload
+      expect(variant_record.progress).to eq(42)
+      expect(variant_record.last_heartbeat_at).to be_present
+      expect(variant_record.state).to eq("processing")
+    end
+
+    it "ignores a progress callback once the record is terminal" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processed")
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "progress", percent: "42" },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(variant_record.reload.progress).to be_nil
+    end
+
     it "transitions variant to failed on failure callback" do
       variant = @user.avatar.variant(:thumb)
       variant_record = create_variant_record(variant, state: "processing")

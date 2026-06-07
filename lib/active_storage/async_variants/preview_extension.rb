@@ -52,6 +52,18 @@ module ActiveStorage
         find_preview_variant_record&.state || "pending"
       end
 
+      def progress
+        find_preview_variant_record&.progress
+      end
+
+      def progress_known?
+        !find_preview_variant_record&.progress.nil?
+      end
+
+      def last_heartbeat_at
+        find_preview_variant_record&.last_heartbeat_at
+      end
+
       private
 
       def async_preview?

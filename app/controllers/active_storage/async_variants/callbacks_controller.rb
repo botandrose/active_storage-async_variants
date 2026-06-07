@@ -11,6 +11,10 @@ module ActiveStorage
         when "success"
           variant_record.update!(state: "processed")
           apply_reported_metadata(variant_record, params)
+        when "progress"
+          ActiveStorage::VariantRecord
+            .where(id: variant_record.id, state: %w[pending processing])
+            .update_all(progress: params[:percent].to_i.clamp(0, 100), last_heartbeat_at: Time.current)
         when "failed"
           # error column is TEXT (64KB); utf8mb4 is up to 4 bytes/char, so cap at 16k chars.
           variant_record.update!(state: "failed", error: params[:error].to_s.truncate(16_000))

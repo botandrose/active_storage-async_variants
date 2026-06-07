@@ -70,6 +70,18 @@ module ActiveStorage
         async_record&.state || "pending"
       end
 
+      def progress
+        async_record&.progress
+      end
+
+      def progress_known?
+        !async_record&.progress.nil?
+      end
+
+      def last_heartbeat_at
+        async_record&.last_heartbeat_at
+      end
+
       private
 
       def resolved_async_options
