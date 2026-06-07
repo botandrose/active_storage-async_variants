@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "turbo-rails"
+require "isolate_assets"
 require_relative "async_variants/version"
 require_relative "async_variants/helper"
 require_relative "async_variants/transformer"
@@ -22,11 +23,23 @@ module ActiveStorage
     PASS_THROUGH_HTML_OPTIONS = %i[alt width height controls autoplay preload].freeze
 
     mattr_accessor :cdn_host
+    mattr_accessor :retry_visible_proc, default: ->(_view) { false }
 
     # Lets the host app plug its auth chain (and thus `current_user`) into the
     # gem's StatesController. Set to a string so resolution is deferred until
     # the host's class is autoloadable. Defaults to ActionController::Base.
     mattr_accessor :parent_controller, default: "ActionController::Base"
+
+    # Gates the failed-state retry affordance; the block runs in the view context.
+    def self.retry_visible_if(&block)
+      self.retry_visible_proc = block
+    end
+
+    def self.retry_visible?(view)
+      !!view.instance_exec(&retry_visible_proc)
+    rescue StandardError
+      false
+    end
 
     class Engine < ::Rails::Engine
       # Prepend the core model/reflection extensions before eager_load runs
@@ -78,6 +91,8 @@ module ActiveStorage
         ActiveStorage::AsyncVariants::PreviewExtension
       )
     end
+
+    Assets = IsolateAssets.register(namespace: self, engine: Engine, route_name: :async_variant_asset)
 
     def self.callback_token_for(variant_record)
       ActiveStorage.verifier.generate(variant_record.id, purpose: :async_variant_callback)

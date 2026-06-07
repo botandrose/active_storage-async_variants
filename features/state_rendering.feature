@@ -15,6 +15,7 @@ Feature: image_tag with async: true emits the right markup per variant state
 
   Scenario: A failed variant renders the failed partial inside the frame
     Given a user with an attached avatar
+    And the retry affordance is visible to everyone
     And the avatar's :thumb_proc variant is in failed state with error "boom"
     When I visit the avatar page for the :thumb_proc variant
     Then the page should contain a turbo-frame

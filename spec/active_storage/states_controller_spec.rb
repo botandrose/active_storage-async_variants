@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe "async variants: state endpoint" do
+RSpec.describe "async variants: state endpoint and asset serving" do
   include_context "with an attached avatar"
 
   describe "touching attached records when variant reaches a terminal state" do
@@ -133,6 +133,108 @@ RSpec.describe "async variants: state endpoint" do
       url = state_path(variant).sub(variant.blob.signed_id, "garbage")
 
       client.get url
+
+      expect(client.response.status).to eq(404)
+    end
+  end
+
+  describe "retry" do
+    let(:client) { ActionDispatch::Integration::Session.new(Rails.application) }
+
+    around do |example|
+      previous = ActiveStorage::AsyncVariants.retry_visible_proc
+      example.run
+      ActiveStorage::AsyncVariants.retry_visible_proc = previous
+    end
+
+    def state_path(variant, kind: "image", direct: "0")
+      Rails.application.routes.url_helpers.async_variant_state_path(
+        signed_blob_id: variant.blob.signed_id,
+        variation_key: variant.variation.key,
+        kind: kind, direct: direct, host: "example.com",
+      )
+    end
+
+    def retry_path(variant, kind: "image", direct: "0")
+      Rails.application.routes.url_helpers.async_variant_state_retry_path(
+        signed_blob_id: variant.blob.signed_id,
+        variation_key: variant.variation.key,
+        kind: kind, direct: direct, host: "example.com",
+      )
+    end
+
+    it "renders the retry dialog, linking the served CSS/JS, when retry is visible" do
+      ActiveStorage::AsyncVariants.retry_visible_if { true }
+      variant = @user.avatar.variant(:thumb_proc)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      client.get state_path(variant)
+      body = client.response.body
+
+      expect(body).to include("async-variant-retry")
+      expect(body).to include("Retry processing")
+      expect(body).to include("boom")
+      expect(body).to match(%r{/active_storage/async_variants/assets/retry\.css})
+      expect(body).to match(%r{/active_storage/async_variants/assets/retry\.js})
+      # The bulk CSS/JS is referenced, not inlined.
+      expect(body).not_to include(".opener {")
+      expect(body).not_to include("customElements.define")
+    end
+
+    it "omits the retry dialog when the visibility block raises" do
+      ActiveStorage::AsyncVariants.retry_visible_if { raise "boom" }
+      variant = @user.avatar.variant(:thumb_proc)
+      create_variant_record(variant, state: "failed", error: "x")
+
+      client.get state_path(variant)
+
+      expect(client.response.body).to include("async-variant-failed")
+      expect(client.response.body).not_to include("async-variant-retry")
+    end
+
+    it "destroys the failed record, re-enqueues processing, and redirects" do
+      variant = @user.avatar.variant(:thumb_proc)
+      create_variant_record(variant, state: "failed", error: "boom")
+
+      expect {
+        client.post retry_path(variant)
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+
+      expect(client.response.status).to eq(303)
+      expect(client.response.headers["Location"]).to match(%r{/active_storage/async_variants/states/})
+
+      record = variant.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      expect(record.state).to eq("pending")
+    end
+  end
+
+  describe "engine asset serving" do
+    let(:client) { ActionDispatch::Integration::Session.new(Rails.application) }
+
+    def engine_asset_path(file)
+      Rails.application.routes.url_helpers.async_variant_asset_path(file, host: "example.com")
+    end
+
+    it "serves retry.css with long-lived public cache headers" do
+      client.get engine_asset_path("retry.css")
+
+      expect(client.response.status).to eq(200)
+      expect(client.response.content_type).to include("text/css")
+      expect(client.response.headers["Cache-Control"]).to include("public")
+      expect(client.response.headers["Cache-Control"]).to match(/max-age=\d+/)
+      expect(client.response.body).to include("--retry-opener-display")
+    end
+
+    it "serves retry.js" do
+      client.get engine_asset_path("retry.js")
+
+      expect(client.response.status).to eq(200)
+      expect(client.response.content_type).to include("javascript")
+      expect(client.response.body).to include("customElements.define")
+    end
+
+    it "404s for an unknown asset" do
+      client.get engine_asset_path("nope.css")
 
       expect(client.response.status).to eq(404)
     end

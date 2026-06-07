@@ -141,4 +141,27 @@ RSpec.describe "async variants: view helpers" do
       expect(html).not_to include("turbo-frame")
     end
   end
+
+  describe ".retry_visible_if" do
+    around do |example|
+      previous = ActiveStorage::AsyncVariants.retry_visible_proc
+      example.run
+      ActiveStorage::AsyncVariants.retry_visible_proc = previous
+    end
+
+    it "evaluates the block in the given view context" do
+      view = Struct.new(:admin) { def admin? = admin }.new(true)
+      ActiveStorage::AsyncVariants.retry_visible_if { admin? }
+      expect(ActiveStorage::AsyncVariants.retry_visible?(view)).to be(true)
+    end
+
+    it "returns false when the block raises" do
+      ActiveStorage::AsyncVariants.retry_visible_if { raise "boom" }
+      expect(ActiveStorage::AsyncVariants.retry_visible?(Object.new)).to be(false)
+    end
+
+    it "defaults to not visible" do
+      expect(ActiveStorage::AsyncVariants.retry_visible?(Object.new)).to be(false)
+    end
+  end
 end

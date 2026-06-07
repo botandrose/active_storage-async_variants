@@ -1,3 +1,43 @@
 <div class="async-variant-state async-variant-failed">
   <%= image_tag async_variant_representation_path(variant), **html_options.symbolize_keys.except(:controls, :autoplay, :preload) %>
+
+  <% if ActiveStorage::AsyncVariants.retry_visible?(self) %>
+    <% dialog_id = "#{async_variant_frame_id(variant)}-error" %>
+    <% form_id = "#{dialog_id}-form" %>
+    <%# Light DOM, so the custom property inherits into the shadow root. %>
+    <style>
+      .async-variant-failed {
+        position: relative;
+        display: inline-block;
+        --retry-opener-display: none;
+      }
+      .async-variant-failed:hover { --retry-opener-display: inline-flex; }
+    </style>
+    <%# In the light DOM so its submit reaches Turbo, and so preventDefault on the
+        buttons doesn't also cancel the submit. %>
+    <form action="<%= Rails.application.routes.url_helpers.async_variant_state_retry_path(signed_blob_id:, variation_key:, kind:, direct:, opts: html_options) %>"
+          method="post"
+          id="<%= form_id %>"
+          data-turbo-frame="<%= async_variant_frame_id(variant) %>"
+          hidden></form>
+    <async-variant-retry>
+      <template shadowrootmode="open">
+        <%= ActiveStorage::AsyncVariants.stylesheet_link_tag "retry" %>
+        <button class="opener" type="button"
+                onclick="event.preventDefault(); event.stopPropagation(); this.getRootNode().getElementById('<%= dialog_id %>').showModal()"
+                title="Variant processing failed — click for details">?</button>
+        <dialog id="<%= dialog_id %>">
+          <button type="button"
+                  onclick="event.preventDefault(); event.stopPropagation(); this.closest('dialog').close()">&times;</button>
+          <header><h3>Variant processing failed</h3></header>
+          <section><pre><%= variant.error %></pre></section>
+          <footer>
+            <button type="button"
+                    onclick="event.preventDefault(); event.stopPropagation(); this.disabled = true; this.textContent = 'Retrying…'; document.getElementById('<%= form_id %>').requestSubmit()">Retry processing</button>
+          </footer>
+        </dialog>
+      </template>
+    </async-variant-retry>
+    <%= ActiveStorage::AsyncVariants.javascript_include_tag "retry", type: "module" %>
+  <% end %>
 </div>

@@ -30,4 +30,5 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "activestorage", ">= 7.2"
   spec.add_dependency "turbo-rails", ">= 2.0"
+  spec.add_dependency "isolate_assets", ">= 0.4"
 end

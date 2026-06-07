@@ -16,6 +16,22 @@ module ActiveStorage
       def show
       end
 
+      def retry
+        @variant.blob.variant_records.where(
+          variation_digest: @variant.variation.digest,
+          state: "failed",
+        ).destroy_all
+        @variant.enqueue!
+
+        redirect_to Rails.application.routes.url_helpers.async_variant_state_path(
+          signed_blob_id: params[:signed_blob_id],
+          variation_key: params[:variation_key],
+          kind: params[:kind],
+          direct: params[:direct],
+          opts: async_variant_html_options.presence,
+        ), status: :see_other
+      end
+
       helper_method :async_variant_kind, :async_variant_direct?, :async_variant_html_options
 
       private
