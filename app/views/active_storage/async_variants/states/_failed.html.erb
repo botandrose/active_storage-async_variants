@@ -1,16 +1,17 @@
 <div class="async-variant-state async-variant-failed">
-  <%= image_tag async_variant_representation_path(variant), **html_options.symbolize_keys.except(:controls, :autoplay, :preload) %>
+  <%= async_variant_placeholder_tag(variant, html_options, kind: kind) %>
+
+  <%= content_tag "progress-bar", "", mode: "circular", error: "", class: "async-variant-progress" %>
+
+  <%= ActiveStorage::AsyncVariants.stylesheet_link_tag "progress" %>
+  <%= ActiveStorage::AsyncVariants.javascript_include_tag "progress-bar", type: "module" %>
 
   <% if ActiveStorage::AsyncVariants.retry_visible?(self) %>
     <% dialog_id = "#{async_variant_frame_id(variant)}-error" %>
     <% form_id = "#{dialog_id}-form" %>
     <%# Light DOM, so the custom property inherits into the shadow root. %>
     <style>
-      .async-variant-failed {
-        position: relative;
-        display: inline-block;
-        --retry-opener-display: none;
-      }
+      .async-variant-failed { --retry-opener-display: none; }
       .async-variant-failed:hover { --retry-opener-display: inline-flex; }
     </style>
     <%# In the light DOM so its submit reaches Turbo, and so preventDefault on the

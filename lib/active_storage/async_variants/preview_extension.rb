@@ -67,15 +67,15 @@ module ActiveStorage
       private
 
       def async_preview?
-        resolved_async_options[:transformer].present?
+        resolved_async_options[:async].present?
       end
 
       # Variations rebuilt from the redirect URL only carry transformations --
-      # :transformer / :processing / :failed are stripped at Variation#initialize
-      # and not embedded in the URL key. Recover them via the digest-keyed
-      # registry that VariationExtension warms on every view-side variant call,
-      # or fall back to scanning attached named variants when the registry is
-      # cold (autoloader hasn't touched the consumer model yet).
+      # :async / :transformer are stripped at Variation#initialize and not
+      # embedded in the URL key. Recover them via the digest-keyed registry that
+      # VariationExtension warms on every view-side variant call, or fall back to
+      # scanning attached named variants when the registry is cold (autoloader
+      # hasn't touched the consumer model yet).
       def resolved_async_options
         @resolved_async_options ||=
           variation.async_options.presence ||
@@ -90,7 +90,7 @@ module ActiveStorage
           attachment.send(:named_variants).each do |name, _|
             candidate = attachment.variant(name.to_sym)
             next unless candidate.variation.transformations.to_json == target
-            return [attachment, name, candidate.variation.async_options] if candidate.variation.async_options[:transformer].present?
+            return [attachment, name, candidate.variation.async_options] if candidate.variation.async_options[:async]
           end
         end
         nil
@@ -107,25 +107,9 @@ module ActiveStorage
         blob.variant_records.find_by(variation_digest: variation.digest)
       end
 
+      # Serve the original until the preview variant is processed.
       def fallback_preview_url(...)
-        case active_fallback
-        when :original then blob.url(...)
-        when :blank then nil
-        when Proc then active_fallback.call(blob)
-        when String then active_fallback
-        end
-      end
-
-      def active_fallback
-        if failed?
-          resolved_async_options.fetch(:failed) { resolved_async_options[:processing] }
-        else
-          resolved_async_options[:processing]
-        end
-      end
-
-      def failed?
-        find_preview_variant_record&.state == "failed"
+        blob.url(...)
       end
     end
   end

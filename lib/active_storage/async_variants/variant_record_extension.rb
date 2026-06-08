@@ -13,8 +13,8 @@ module ActiveStorage
 
       # processed and failed are terminal states: cache fragments built when
       # state was pending/processing need to be invalidated so the next
-      # render sees the new state (and serves the failed: fallback URL,
-      # swaps src to the direct CDN URL, etc.).
+      # render sees the new state (swaps the processing box for the failed
+      # error state, swaps src to the direct CDN URL, etc.).
       def reached_terminal_state?
         saved_change_to_state? && %w[processed failed].include?(state)
       end

@@ -2,19 +2,23 @@
    media box (and the progress bar centered on it) coincides with the parent
    figure box, instead of sitting in a taller line box from the baseline gap --
    otherwise an overlay centered on the figure lands off-center from the ring. */
-turbo-frame:has(> .async-variant-processing) {
+turbo-frame:has(> .async-variant-processing),
+turbo-frame:has(> .async-variant-failed) {
   display: block;
 }
-.async-variant-processing {
+.async-variant-processing,
+.async-variant-failed {
   position: relative;
   display: block;
 }
-/* Present to reserve the processed media's box, but rendered invisible via
-   opacity rather than visibility/display -- so it still has layout and stays
-   queryable by Capybara. The spinner floats over it. block drops the baseline
-   descender so the ring centers on the media, not a few px below it. */
+/* Present to reserve the variant's box, but rendered invisible via opacity
+   rather than visibility/display -- so it still has layout and stays queryable
+   by Capybara. The progress bar floats over it. block drops the baseline
+   descender so the ring centers on the box, not a few px below it. */
 .async-variant-processing img,
-.async-variant-processing video {
+.async-variant-processing video,
+.async-variant-failed img,
+.async-variant-failed video {
   opacity: 0.001;
   display: block;
 }
@@ -27,4 +31,5 @@ turbo-frame:has(> .async-variant-processing) {
   --progress-color: #2E7D32;
   --indeterminate-color: #2E7D32;
   --track-color: rgba(0, 0, 0, 0.25);
+  --error-color: #ff7c81;
 }

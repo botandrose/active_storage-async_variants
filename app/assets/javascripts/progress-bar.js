@@ -98,8 +98,13 @@ const STYLES = `
     stroke: var(--indeterminate-color);
   }
 
-  :host([error]) .progress-ring {
+  /* The X of the error glyph; revealed by [error]. */
+  .error-mark {
+    display: none;
+    fill: none;
     stroke: var(--error-color);
+    stroke-width: var(--circular-thickness);
+    stroke-linecap: round;
   }
 
   .label {
@@ -132,6 +137,12 @@ const STYLES = `
     0%   { transform: rotate(-90deg); }
     100% { transform: rotate(270deg); }
   }
+
+  /* Error (circular): static full ring + X. Last so it beats the indeterminate rules. */
+  :host([error]) .track { stroke: var(--error-color); }
+  :host([error]) .progress-ring { display: none; }
+  :host([error]) .ring { animation: none; }
+  :host([error]) .error-mark { display: block; }
 `;
 
 const LINEAR_HTML = `
@@ -144,6 +155,7 @@ const CIRCULAR_HTML = `
     <svg class="ring" viewBox="0 0 100 100">
       <circle class="track" cx="50" cy="50" r="${CIRCLE_RADIUS}"></circle>
       <circle class="progress-ring" cx="50" cy="50" r="${CIRCLE_RADIUS}" pathLength="${PATH_LENGTH}"></circle>
+      <path class="error-mark" d="M37 37 L63 63 M63 37 L37 63"></path>
     </svg>
     <span class="label"><slot></slot></span>
   </div>

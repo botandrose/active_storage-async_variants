@@ -37,3 +37,4 @@ Feature: image_tag with async: true emits the right markup per variant state
     When I visit the avatar page for the :thumb_proc variant
     Then the page should contain a turbo-frame
     And the frame should render the failed state
+    And the frame should render an error progress bar

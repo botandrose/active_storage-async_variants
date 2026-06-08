@@ -3,7 +3,7 @@
 module ActiveStorage
   module AsyncVariants
     module VariationExtension
-      ASYNC_KEYS = %i[processing failed transformer].freeze
+      ASYNC_KEYS = %i[async transformer].freeze
 
       def initialize(transformations)
         if transformations.is_a?(Hash)
@@ -13,7 +13,7 @@ module ActiveStorage
           @async_options = {}
           super
         end
-        ActiveStorage::AsyncVariants::Registry.register(digest, @async_options) if @async_options[:processing].present?
+        ActiveStorage::AsyncVariants::Registry.register(digest, @async_options) if @async_options[:async]
       end
 
       def async_options

@@ -19,7 +19,7 @@ bin/rails db:migrate
 
 ## Usage
 
-Add `processing:` to any named variant to opt into the async pipeline. The value is what to serve while the variant is being processed:
+Add `async: true` to any named variant to opt into the async pipeline:
 
 ```ruby
 class User < ApplicationRecord
@@ -28,12 +28,12 @@ class User < ApplicationRecord
       transformer: VideoTranscoder,
       codec: "vp9",
       resolution: "720p",
-      processing: :original
+      async: true
   end
 end
 ```
 
-The presence of `processing:` is what opts a variant into async processing. Without it, variants behave exactly as they do in standard Active Storage. The `transformer:` option is independent -- you can use a custom transformer synchronously, or use the default transformer asynchronously:
+The presence of `async: true` is what opts a variant into async processing. Without it, variants behave exactly as they do in standard Active Storage. The `transformer:` option is independent -- you can use a custom transformer synchronously, or use the default transformer asynchronously:
 
 ```ruby
 has_one_attached :video do |attachable|
@@ -41,12 +41,12 @@ has_one_attached :video do |attachable|
   attachable.variant :web,
     transformer: VideoTranscoder,
     codec: "vp9",
-    processing: :original
+    async: true
 
   # Async with default transformer (large image resize that's too slow for inline)
   attachable.variant :thumbnail,
     resize_to_limit: [200, 200],
-    processing: :original
+    async: true
 
   # Sync with custom transformer (fast custom processing, no opt-in needed)
   attachable.variant :watermarked,
@@ -60,23 +60,23 @@ In views, use the same Active Storage helpers:
 <%= video_tag user.video.variant(:web).url %>
 ```
 
-If the variant is still processing, this serves the original video. Once processing completes, it serves the transcoded variant.
+While the variant is still processing (or has failed), this serves the original video. Once processing completes, it serves the transcoded variant.
 
 ## `image_tag` / `video_tag` with `async:` and `direct:`
 
-For a polish layer that swaps in placeholder content while a variant is being processed, polls for completion in the background, and optionally serves the finished variant straight from your CDN, the gem adds two options to `image_tag` and `video_tag`:
+For a polish layer that shows a progress bar while a variant is being processed, polls for completion in the background, and optionally serves the finished variant straight from your CDN, the gem adds two options to `image_tag` and `video_tag`:
 
 ```erb
-<%# Variant URL with the async client wired up: spinner while pending,
+<%# Variant URL with the async client wired up: a progress bar while pending,
     polls for completion, swaps to the real image when ready. %>
 <%= image_tag user.avatar.variant(:web), async: true %>
 
 <%# When the variant is ready, render its direct CDN/S3 URL instead of
     routing through Rails. While pending/failed, falls back to the
-    Rails representation URL (which serves the placeholder). %>
+    Rails representation URL (which serves the original). %>
 <%= image_tag user.avatar.variant(:web), direct: true %>
 
-<%# Both together: direct URL once processed, placeholder while pending,
+<%# Both together: direct URL once processed, progress bar while pending,
     polling for completion. %>
 <%= image_tag user.avatar.variant(:web), async: true, direct: true %>
 
@@ -227,31 +227,9 @@ variant.failed?      # => true if permanently failed
 variant.error        # => error message string, or nil
 ```
 
-## Placeholder Options
+## Placeholders
 
-The `processing:` option controls what gets served while a variant is being processed. The `failed:` option (optional) controls what gets served once the variant has permanently failed; if omitted, it defaults to the `processing:` value.
-
-```ruby
-# Serve the original unprocessed file while processing
-attachable.variant :web, processing: :original
-
-# Return nil -- let the view handle it
-attachable.variant :web, processing: :blank
-
-# Static URL while processing
-attachable.variant :web, processing: "/placeholders/processing.svg"
-
-# Dynamic placeholder via Proc
-attachable.variant :web,
-  processing: -> (blob) { "/placeholders/processing.svg" }
-
-# Distinct placeholder when permanently failed
-attachable.variant :web,
-  processing: :original,
-  failed: "/icons/broken.svg"
-```
-
-Both options accept the same set of values: `:original`, `:blank`, a String URL, or a Proc that receives the blob.
+There is nothing to configure. A variant's `.url` serves the original while it is pending, processing, or failed, and the processed variant once ready. With `async: true` on `image_tag`/`video_tag`, the gem instead shows a circular progress bar while processing, and a red error glyph -- the same progress bar in its error state -- once the variant has permanently failed.
 
 ## Failure Handling
 
@@ -276,7 +254,7 @@ variant.error   # => "ffmpeg exited with status 1: ..."
 5. The external service processes the file, uploads the result to the destination URL
 6. The external service POSTs to the callback URL with success/failure status
 7. The gem's callback endpoint transitions the `VariantRecord` to `processed` or `failed`
-8. When a view requests the variant URL, the gem checks state and serves the variant or the `processing:`/`failed:` placeholder
+8. When a view requests the variant URL, the gem checks state and serves the processed variant or, while pending/processing/failed, the original
 
 ### Inline transformer flow
 
@@ -284,7 +262,7 @@ variant.error   # => "ffmpeg exited with status 1: ..."
 4. The job calls the transformer's `process` method, blocking until complete
 5. On success, the output is uploaded, the `VariantRecord` transitions to `processed`
 6. On failure, the error is recorded and the job is re-enqueued (up to 3 attempts)
-7. When a view requests the variant URL, the gem checks state and serves the variant or the `processing:`/`failed:` placeholder
+7. When a view requests the variant URL, the gem checks state and serves the processed variant or, while pending/processing/failed, the original
 
 ## License
 

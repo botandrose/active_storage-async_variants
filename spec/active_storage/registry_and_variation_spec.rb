@@ -16,14 +16,14 @@ RSpec.describe "async variants: registry and Variation" do
     # Ensures cold Puma workers can resolve URL-reconstructed variations
     # without depending on having rendered a view that touches the named
     # variant first.
-    it "registers async_options when has_X_attached declares a variant with :processing" do
+    it "registers async_options when has_X_attached declares a variant with async: true" do
       Class.new(ActiveRecord::Base) do
         self.table_name = "users"
         has_one_attached :decl_warmed_photo do |a|
           a.variant :decl_warmed,
             resize_to_limit: [123, 123], format: "png",
             transformer: FakePreviewTransformer,
-            processing: "/decl-warmed.svg"
+            async: true
         end
       end
 
@@ -35,10 +35,10 @@ RSpec.describe "async variants: registry and Variation" do
       ).digest
 
       expect(ActiveStorage::AsyncVariants::Registry[lookup_digest])
-        .to include(processing: "/decl-warmed.svg")
+        .to include(async: true)
     end
 
-    it "does not register async_options for variants declared without :processing" do
+    it "does not register async_options for variants declared without async:" do
       Class.new(ActiveRecord::Base) do
         self.table_name = "users"
         has_one_attached :decl_sync_photo do |a|

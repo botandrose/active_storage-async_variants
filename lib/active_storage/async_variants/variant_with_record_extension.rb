@@ -27,15 +27,8 @@ module ActiveStorage
       end
 
       def url(...)
-        if blob.bucket_backed? && !processed?
-          fallback = active_fallback
-          case fallback
-          when :original then blob.url(...)
-          when :blank then nil
-          when Proc then fallback.call(blob)
-          when String then fallback
-          else super
-          end
+        if blob.bucket_backed? && async_variant? && !processed?
+          blob.url(...)
         else
           super
         end
@@ -84,20 +77,16 @@ module ActiveStorage
 
       private
 
+      def async_variant?
+        resolved_async_options[:async].present?
+      end
+
       def resolved_async_options
         @resolved_async_options ||=
           variation.async_options.presence ||
           ActiveStorage::AsyncVariants::Registry[variation.digest] ||
           find_named_async_variant&.dig(2) ||
           {}
-      end
-
-      def active_fallback
-        if failed?
-          resolved_async_options.fetch(:failed) { resolved_async_options[:processing] }
-        else
-          resolved_async_options[:processing]
-        end
       end
 
       # Cold-path scan: used by enqueue! (which needs the attachment +
@@ -126,7 +115,7 @@ module ActiveStorage
           attachment.send(:named_variants).each do |name, _|
             candidate = attachment.variant(name.to_sym)
             if candidate.variation.transformations.to_json == target
-              return [attachment, name, candidate.variation.async_options] if candidate.variation.async_options[:processing].present?
+              return [attachment, name, candidate.variation.async_options] if candidate.variation.async_options[:async]
             end
           end
         end

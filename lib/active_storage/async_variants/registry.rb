@@ -7,7 +7,7 @@ module ActiveStorage
     # Process-wide lookup of async_options keyed by Variation#digest.
     #
     # Populated lazily by VariationExtension#initialize whenever a Variation is
-    # constructed with :transformer in its async_options -- which happens on
+    # constructed with :async in its async_options -- which happens on
     # every view-side `attachment.variant(:name)` call. The redirect controller
     # then resolves async_options by digest without scanning blob.attachments
     # for a transformations-match.

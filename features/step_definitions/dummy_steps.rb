@@ -24,6 +24,10 @@ Then /^the frame should render a progress bar$/ do
   expect(page).to have_css("turbo-frame progress-bar", visible: :all)
 end
 
+Then /^the frame should render an error progress bar$/ do
+  expect(page).to have_css("turbo-frame progress-bar[error]", visible: :all)
+end
+
 Then /^the progress bar should be indeterminate$/ do
   expect(page).to have_css("turbo-frame progress-bar:not([percent])", visible: :all)
 end

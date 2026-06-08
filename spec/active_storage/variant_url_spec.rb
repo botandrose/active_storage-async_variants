@@ -3,8 +3,8 @@
 RSpec.describe "async variants: variant URL resolution" do
   include_context "with an attached avatar"
 
-  describe "processing: :original" do
-    it "serves the original URL when variant is not yet processed" do
+  describe "unprocessed async variant" do
+    it "serves the original URL when the variant is not yet processed" do
       variant = @user.avatar.variant(:thumb)
       expect(variant.url).to be_present
       expect(variant.url).to end_with("/image.png")
@@ -23,9 +23,8 @@ RSpec.describe "async variants: variant URL resolution" do
   end
 
   describe "VariantWithRecord with URL-reconstructed variation that matches no named variant" do
-    # Same invariant as the Preview case: a variation rebuilt from the URL
-    # may not match any of the blob's named variants. The gem must not fall
-    # back to the source blob URL in that case.
+    # A variation rebuilt from the URL may not match any of the blob's named
+    # variants. The gem must not fall back to the source blob URL in that case.
     it "defers to super instead of returning the source blob URL" do
       variation = ActiveStorage::Variation.wrap(resize_to_limit: [9999, 9999])
       variant = ActiveStorage::VariantWithRecord.new(@user.avatar.blob, variation)
@@ -39,8 +38,8 @@ RSpec.describe "async variants: variant URL resolution" do
     # <preview_blob>/<variation_key>/.... The preview blob has only a
     # preview_image attachment (which has no named_variants), so the gem must
     # walk one level back via preview_image -> source blob -> named variants
-    # to recover the configured fallback.
-    it "resolves :processing via the source blob's named variant" do
+    # to recover the async config and serve the original.
+    it "recovers the async config via the source blob's named variant and serves the original" do
       preview_blob = ActiveStorage::Blob.create_and_upload!(
         io: File.open("spec/support/fixtures/image.png"),
         filename: "preview.png",
@@ -55,7 +54,7 @@ RSpec.describe "async variants: variant URL resolution" do
 
       variant = ActiveStorage::VariantWithRecord.new(preview_blob, url_variation)
 
-      expect(variant.url).to eq("/spinner.svg")
+      expect(variant.url).to end_with("/preview.png")
     end
 
     it "keeps scanning when the source blob has no matching named variant" do
@@ -75,69 +74,29 @@ RSpec.describe "async variants: variant URL resolution" do
     end
   end
 
-  describe "processing: :blank" do
-    it "returns nil when variant is not yet processed" do
-      variant = @user.avatar.variant(:thumb_blank)
-      expect(variant.url).to be_nil
-    end
-  end
+  describe "while not processed" do
+    it "serves the original when a failed record exists" do
+      variant = @user.avatar.variant(:thumb)
+      create_variant_record(variant, state: "failed", error: "boom")
 
-  describe "processing: Proc" do
-    it "calls the proc when variant is not yet processed" do
-      variant = @user.avatar.variant(:thumb_custom)
-      expect(variant.url).to eq("/placeholders/processing.svg")
-    end
-  end
-
-  describe "failed:" do
-    it "serves the processing placeholder while pending" do
-      variant = @user.avatar.variant(:thumb_with_error_image)
       expect(variant.url).to end_with("/image.png")
     end
 
-    it "serves the failed: string URL when the variant is failed" do
-      variant = @user.avatar.variant(:thumb_with_error_image)
-      create_variant_record(variant, state: "failed", error: "boom")
-
-      expect(variant.url).to eq("/icons/broken.svg")
-    end
-
-    it "calls a Proc failed: with the blob when failed" do
-      variant = @user.avatar.variant(:thumb_with_error_proc)
-      create_variant_record(variant, state: "failed", error: "boom")
-
-      expect(variant.url).to eq("/errors/image.png.svg")
-    end
-
-    it "returns nil for failed: :blank when failed" do
-      variant = @user.avatar.variant(:thumb_with_error_blank)
-      create_variant_record(variant, state: "failed", error: "boom")
-
-      expect(variant.url).to be_nil
-    end
-
-    it "falls back to the processing placeholder when failed: is not specified" do
+    it "serves the original when a processing record exists" do
       variant = @user.avatar.variant(:thumb)
-      create_variant_record(variant, state: "failed", error: "boom")
+      create_variant_record(variant, state: "processing")
 
       expect(variant.url).to end_with("/image.png")
     end
   end
 
   describe "after processing" do
-    it "serves the variant URL, not the fallback" do
+    it "serves the variant URL, not the original" do
       variant = @user.avatar.variant(:thumb)
       simulate_processed_variant(variant)
 
       expect(variant.url).to be_present
       expect(variant.url).to end_with("/thumb.png")
-    end
-
-    it "still serves fallback when variant record exists but is not processed" do
-      variant = @user.avatar.variant(:thumb)
-      create_variant_record(variant, state: "processing")
-
-      expect(variant.url).to end_with("/image.png")
     end
   end
 
@@ -184,7 +143,7 @@ RSpec.describe "async variants: variant URL resolution" do
   end
 
   describe "URL-decoded variants" do
-    it "serves fallback by looking up named variant definition" do
+    it "serves the original by looking up the named variant definition" do
       named_variant = @user.avatar.variant(:thumb)
       decoded_variation = ActiveStorage::Variation.decode(named_variant.variation.key)
       url_decoded_variant = ActiveStorage::VariantWithRecord.new(@user.avatar.blob, decoded_variation)

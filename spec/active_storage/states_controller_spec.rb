@@ -107,8 +107,9 @@ RSpec.describe "async variants: state endpoint and asset serving" do
       expect(client.response.body).not_to match(/setTimeout.*reload/)
     end
 
-    # The (hidden) processing placeholder matches the eventual element so it
-    # reserves the right box -- a <video> for video variants, with the spinner over it.
+    # The hidden placeholder matches the eventual element so it reserves the
+    # right box -- a zero-network <video> for video variants, an <img>
+    # otherwise -- with the progress bar floating over it.
     it "renders a <video> placeholder for a video variant, not an <img>" do
       variant = @user.avatar.variant(:thumb_proc)
       create_variant_record(variant, state: "processing")
@@ -119,14 +120,14 @@ RSpec.describe "async variants: state endpoint and asset serving" do
       expect(client.response.body).not_to include("<img")
     end
 
-    it "renders the failed placeholder as an <img> even when kind=video" do
+    it "renders a <video> placeholder for a failed video variant, not an <img>" do
       variant = @user.avatar.variant(:thumb_proc)
       create_variant_record(variant, state: "failed", error: "boom")
 
       client.get state_path(variant, kind: "video")
 
-      expect(client.response.body).to include("<img")
-      expect(client.response.body).not_to include("<video")
+      expect(client.response.body).to include("<video")
+      expect(client.response.body).not_to include("<img")
     end
 
     it "renders the processed partial as an <img> when state is processed" do

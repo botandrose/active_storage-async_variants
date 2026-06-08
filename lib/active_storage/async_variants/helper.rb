@@ -7,6 +7,25 @@ module ActiveStorage
     # `helper ActiveStorage::AsyncVariants::Helper` (so the state partials can
     # use them).
     module Helper
+      # 1x1 transparent GIF: reserves the variant's box without fetching the
+      # original through the representations path on every poll.
+      PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
+      def async_variant_placeholder_tag(variant, html_options = {}, kind: :image)
+        opts = async_variant_box_dimensions(variant)
+          .merge(html_options.symbolize_keys.except(:src, :controls, :autoplay, :preload, :poster))
+        # A video placeholder carries no <source>, so it reserves the box
+        # without loading anything -- same zero-network intent as the GIF.
+        kind == :video ? content_tag(:video, "", opts) : image_tag(PLACEHOLDER_SRC, opts)
+      end
+
+      def async_variant_box_dimensions(variant)
+        resize = variant.variation.transformations
+          .values_at(:resize_to_limit, :resize_to_fit, :resize_to_fill)
+          .compact.first
+        resize.is_a?(Array) ? { width: resize[0], height: resize[1] } : {}
+      end
+
       # In test with non-bucket-backed services, the gem defers to vanilla
       # ActiveStorage (synchronous vips transform) -- inline rendering keeps
       # those environments simple. Otherwise, only inline a normal <img> when

@@ -88,20 +88,13 @@ module DummySchema
 
     Object.const_set :User, Class.new(ActiveRecord::Base) {
       has_one_attached :avatar do |attachable|
-        attachable.variant :thumb,                       resize_to_limit: [100, 100], processing: :original
-        attachable.variant :thumb_sync,                  resize_to_limit: [200, 200]
-        attachable.variant :thumb_blank,                 resize_to_limit: [100, 100], processing: :blank
-        attachable.variant :thumb_custom,                resize_to_limit: [100, 100], processing: ->(blob) { "/placeholders/processing.svg" }
-        attachable.variant :thumb_inline,                transformer: CopyTransformer,        processing: :original
-        attachable.variant :thumb_failing,               transformer: FailingTransformer,     processing: :original
-        attachable.variant :thumb_with_error_image,      resize_to_limit: [300, 300], processing: :original, failed: "/icons/broken.svg"
-        attachable.variant :thumb_with_error_proc,       resize_to_limit: [400, 400], processing: :original, failed: ->(blob) { "/errors/#{blob.filename}.svg" }
-        attachable.variant :thumb_with_error_blank,      resize_to_limit: [500, 500], processing: :original, failed: :blank
-        attachable.variant :thumb_external,              transformer: FakeExternalTransformer, processing: :original
-        attachable.variant :thumb_proc,                  resize_to_limit: [600, 600], processing: ->(_blob) { "/placeholders/processing.svg" }
-        attachable.variant :thumb_preview,               resize_to_limit: [101, 101], transformer: FakePreviewTransformer, processing: "/spinner.svg"
-        attachable.variant :thumb_preview_with_failed,   resize_to_limit: [102, 102], format: "png",
-          transformer: FakePreviewTransformer, processing: "/spinner.svg", failed: "/icons/broken.svg"
+        attachable.variant :thumb,          resize_to_limit: [100, 100], async: true
+        attachable.variant :thumb_sync,     resize_to_limit: [200, 200]
+        attachable.variant :thumb_inline,   transformer: CopyTransformer,         async: true
+        attachable.variant :thumb_failing,  transformer: FailingTransformer,      async: true
+        attachable.variant :thumb_external, transformer: FakeExternalTransformer, async: true
+        attachable.variant :thumb_proc,     resize_to_limit: [600, 600], async: true
+        attachable.variant :thumb_preview,  resize_to_limit: [101, 101], transformer: FakePreviewTransformer, async: true
       end
     }
   end

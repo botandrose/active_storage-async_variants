@@ -1,6 +1,5 @@
 <div class="async-variant-state async-variant-processing">
-  <% method = kind == :video ? :video_tag : :image_tag %>
-  <%= send method, async_variant_representation_path(variant), **html_options.symbolize_keys %>
+  <%= async_variant_placeholder_tag(variant, html_options, kind: kind) %>
 
   <%= content_tag "progress-bar", "", mode: "circular", class: "async-variant-progress", percent: variant.progress %>
 </div>

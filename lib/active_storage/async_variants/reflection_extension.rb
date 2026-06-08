@@ -7,7 +7,7 @@ module ActiveStorage
     #
     #   has_one_attached :avatar do |attachable|
     #     attachable.variant :thumb, resize_to_limit: [150, 150], format: "webp",
-    #       transformer: Crucible, processing: "/spinner.svg"
+    #       transformer: Crucible, async: true
     #   end
     #
     # Without this, the Registry only warms when view-side code calls
