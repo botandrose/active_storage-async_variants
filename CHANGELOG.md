@@ -1,3 +1,8 @@
+## [0.8.0]
+
+- The processing progress bar now advances smoothly between polls: variants expose a `rate` (percent-per-second, derived from the record's `created_at`, last heartbeat, and reported progress) that the `@botandrose/progress-bar` element uses to optimistically creep forward, instead of only stepping on each refresh. Includes a migration adding a `created_at` column to `active_storage_variant_records`; run it before deploying.
+- Fix: the processing/failed placeholder image now points at a tiny gem-served 1x1 GIF whose URL ends in the media's filename, instead of a `data:` URI. Restores filename-based identification of the placeholder (e.g. for media-table diff assertions) without fetching the original through a representation. Video placeholders remain a source-less `<video>`.
+
 ## [0.7.0]
 
 - **Breaking:** A variant now opts into async processing with `async: true` instead of `processing:`. The `processing:` and `failed:` placeholder options are removed entirely — there is nothing to configure. A variant's `.url` serves the original while pending/processing/failed, and the processed variant once ready.
