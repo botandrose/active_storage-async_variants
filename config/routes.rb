@@ -12,5 +12,13 @@ Rails.application.routes.draw do
     to: "active_storage/async_variants/states#retry",
     as: :async_variant_state_retry
 
+  # Tiny 1x1 GIF whose URL carries the media's filename, so the processing/failed
+  # box reserves layout without fetching the original through a representation.
+  get "/active_storage/async_variants/placeholder/:filename",
+    to: "active_storage/async_variants/states#placeholder",
+    as: :async_variant_placeholder,
+    constraints: { filename: %r{[^/]+} },
+    format: false
+
   ActiveStorage::AsyncVariants::Assets.draw(self, "/active_storage/async_variants/assets")
 end

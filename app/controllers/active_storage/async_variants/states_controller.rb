@@ -11,9 +11,18 @@ module ActiveStorage
 
       layout false
 
-      before_action :set_variant
+      # 1x1 transparent GIF served at a filename-bearing URL, so the
+      # processing/failed <img> identifies its media without fetching anything.
+      TRANSPARENT_GIF = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7".unpack1("m").freeze
+
+      before_action :set_variant, only: %i[show retry]
 
       def show
+      end
+
+      def placeholder
+        expires_in 1.year, public: true
+        send_data TRANSPARENT_GIF, type: "image/gif", disposition: "inline"
       end
 
       def retry

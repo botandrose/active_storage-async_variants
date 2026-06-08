@@ -96,6 +96,16 @@ RSpec.describe "async variants: state endpoint and asset serving" do
       expect(client.response.body).to match(/<progress-bar[^>]*percent="42"/)
     end
 
+    it "points the placeholder at the filename-bearing gem route, not a representation" do
+      variant = @user.avatar.variant(:thumb_proc)
+      create_variant_record(variant, state: "processing")
+
+      client.get state_path(variant)
+
+      expect(client.response.body).to include("/active_storage/async_variants/placeholder/image.png")
+      expect(client.response.body).not_to include("/representations/")
+    end
+
     it "renders the failed partial when state is failed" do
       variant = @user.avatar.variant(:thumb_proc)
       create_variant_record(variant, state: "failed", error: "boom")
@@ -258,6 +268,18 @@ RSpec.describe "async variants: state endpoint and asset serving" do
       client.get engine_asset_path("nope.css")
 
       expect(client.response.status).to eq(404)
+    end
+  end
+
+  describe "placeholder asset" do
+    let(:client) { ActionDispatch::Integration::Session.new(Rails.application) }
+
+    it "serves a tiny gif at a filename-bearing URL with public cache headers" do
+      client.get Rails.application.routes.url_helpers.async_variant_placeholder_path("sample.mp4", host: "example.com")
+
+      expect(client.response.status).to eq(200)
+      expect(client.response.content_type).to include("image/gif")
+      expect(client.response.headers["Cache-Control"]).to include("public")
     end
   end
 end

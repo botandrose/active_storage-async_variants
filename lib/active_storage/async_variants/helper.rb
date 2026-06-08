@@ -7,16 +7,18 @@ module ActiveStorage
     # `helper ActiveStorage::AsyncVariants::Helper` (so the state partials can
     # use them).
     module Helper
-      # 1x1 transparent GIF: reserves the variant's box without fetching the
-      # original through the representations path on every poll.
-      PLACEHOLDER_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-
+      # Invisible box reserving layout for the progress bar. The image src is a
+      # tiny gem GIF whose URL ends in the media filename (no original fetched);
+      # the video placeholder carries no <source>.
       def async_variant_placeholder_tag(variant, html_options = {}, kind: :image)
         opts = async_variant_box_dimensions(variant)
           .merge(html_options.symbolize_keys.except(:src, :controls, :autoplay, :preload, :poster))
-        # A video placeholder carries no <source>, so it reserves the box
-        # without loading anything -- same zero-network intent as the GIF.
-        kind == :video ? content_tag(:video, "", opts) : image_tag(PLACEHOLDER_SRC, opts)
+        if kind == :video
+          content_tag(:video, "", opts)
+        else
+          src = Rails.application.routes.url_helpers.async_variant_placeholder_path(variant.blob.filename.to_s)
+          image_tag(src, opts)
+        end
       end
 
       def async_variant_box_dimensions(variant)
