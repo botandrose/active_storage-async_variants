@@ -1,5 +1,6 @@
 const CIRCLE_RADIUS = 40; // fallback r attribute; CSS shrinks it to fit the stroke
 const PATH_LENGTH = 100;  // normalize the arc so dash math is independent of the radius
+const RATE_HZ = 30;       // optimistic auto-advance tick frequency
 
 const STYLES = `
   :host {
@@ -178,12 +179,21 @@ function clampPercent(value) {
   return Math.min(100, Math.max(0, number));
 }
 
+function parseRate(value) {
+  const number = Number(value);
+  if (Number.isNaN(number)) {
+    throw new TypeError(`progress-bar: rate must be numeric, got ${JSON.stringify(value)}`);
+  }
+  return number;
+}
+
 class ProgressBar extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
     this._percent = null;
     this._renderedMode = null;
+    this._rateTimer = null;
   }
 
   connectedCallback() {
@@ -192,6 +202,11 @@ class ProgressBar extends HTMLElement {
     this.setAttribute('aria-valuemin', '0');
     this.setAttribute('aria-valuemax', '100');
     this.updateBar();
+    this._syncTicker();
+  }
+
+  disconnectedCallback() {
+    this._stopTicker();
   }
 
   get percent() {
@@ -214,6 +229,19 @@ class ProgressBar extends HTMLElement {
     this.toggleAttribute('error', Boolean(value));
   }
 
+  get rate() {
+    const value = this.getAttribute('rate');
+    return value === null ? null : Number(value);
+  }
+
+  set rate(value) {
+    if (value === null || value === undefined) {
+      this.removeAttribute('rate');
+    } else {
+      this.setAttribute('rate', parseRate(value));
+    }
+  }
+
   get indeterminate() {
     return !this.hasAttribute('percent');
   }
@@ -227,15 +255,21 @@ class ProgressBar extends HTMLElement {
   }
 
   static get observedAttributes() {
-    return ['percent', 'mode'];
+    return ['percent', 'mode', 'rate'];
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
     if (name === 'percent') {
       this._percent = newValue === null ? null : clampPercent(newValue);
     }
+    if (name === 'rate' && newValue !== null) {
+      parseRate(newValue);
+    }
     if (name === 'mode') {
       this.render();
+    }
+    if (name === 'percent' || name === 'rate') {
+      this._syncTicker();
     }
     this.updateBar();
   }
@@ -260,6 +294,38 @@ class ProgressBar extends HTMLElement {
       this.removeAttribute('aria-valuenow');
     } else {
       this.setAttribute('aria-valuenow', String(this._percent));
+    }
+  }
+
+  // Optimistic auto-advance: while a nonzero rate is set on a determinate bar,
+  // creep percent forward on its own. Indeterminate bars ignore rate entirely.
+  _syncTicker() {
+    const rate = Number(this.getAttribute('rate'));
+    const shouldRun = this.isConnected && !this.indeterminate && Number.isFinite(rate) && rate !== 0;
+    if (shouldRun && this._rateTimer === null) {
+      this._rateTimer = setInterval(() => this._tick(), 1000 / RATE_HZ);
+    } else if (!shouldRun) {
+      this._stopTicker();
+    }
+  }
+
+  _stopTicker() {
+    if (this._rateTimer !== null) {
+      clearInterval(this._rateTimer);
+      this._rateTimer = null;
+    }
+  }
+
+  _tick() {
+    const rate = Number(this.getAttribute('rate'));
+    const next = clampPercent(this._percent + rate / RATE_HZ);
+    if (next !== this._percent) {
+      this.percent = next;
+    }
+    // Hitting the bound it's heading toward retires the rate; a later percent
+    // change can re-arm it.
+    if (next === 0 || next === 100) {
+      this.removeAttribute('rate');
     }
   }
 

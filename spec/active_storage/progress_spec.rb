@@ -23,6 +23,22 @@ RSpec.describe "async variants: progress reporting" do
       expect(variant.progress_known?).to be true
       expect(variant.last_heartbeat_at).to eq(heartbeat)
     end
+
+    it "reports a progress rate of percent over elapsed processing time" do
+      variant = @user.avatar.variant(:thumb)
+      record = create_variant_record(variant, state: "processing")
+      base = Time.current
+      record.update!(progress: 42, created_at: base - 84, last_heartbeat_at: base)
+
+      expect(variant.progress_rate).to eq(0.5)
+    end
+
+    it "reports a nil rate before any progress" do
+      variant = @user.avatar.variant(:thumb)
+      create_variant_record(variant, state: "processing")
+
+      expect(variant.progress_rate).to be_nil
+    end
   end
 
   describe "progress query API on Preview" do

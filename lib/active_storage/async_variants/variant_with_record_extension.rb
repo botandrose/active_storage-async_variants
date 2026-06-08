@@ -75,6 +75,15 @@ module ActiveStorage
         async_record&.last_heartbeat_at
       end
 
+      # Percent-per-second observed so far (progress over elapsed processing
+      # time); drives the progress-bar's optimistic creep between reloads.
+      def progress_rate
+        record = async_record
+        return nil unless record&.created_at && record.last_heartbeat_at && record.progress&.positive?
+        elapsed = record.last_heartbeat_at - record.created_at
+        elapsed.positive? ? (record.progress / elapsed).round(4) : nil
+      end
+
       private
 
       def async_variant?

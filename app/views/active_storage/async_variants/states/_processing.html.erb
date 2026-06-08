@@ -1,7 +1,7 @@
 <div class="async-variant-state async-variant-processing">
   <%= async_variant_placeholder_tag(variant, html_options, kind: kind) %>
 
-  <%= content_tag "progress-bar", "", mode: "circular", class: "async-variant-progress", percent: variant.progress %>
+  <%= content_tag "progress-bar", "", mode: "circular", class: "async-variant-progress", percent: variant.progress, rate: variant.progress_rate %>
 </div>
 
 <%= ActiveStorage::AsyncVariants.stylesheet_link_tag "progress" %>

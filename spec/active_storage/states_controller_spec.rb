@@ -96,6 +96,17 @@ RSpec.describe "async variants: state endpoint and asset serving" do
       expect(client.response.body).to match(/<progress-bar[^>]*percent="42"/)
     end
 
+    it "renders a rate derived from progress over elapsed processing time" do
+      variant = @user.avatar.variant(:thumb_proc)
+      record = create_variant_record(variant, state: "processing")
+      base = Time.current
+      record.update!(progress: 42, created_at: base - 84, last_heartbeat_at: base)
+
+      client.get state_path(variant)
+
+      expect(client.response.body).to match(/<progress-bar[^>]*rate="0\.5"/)
+    end
+
     it "points the placeholder at the filename-bearing gem route, not a representation" do
       variant = @user.avatar.variant(:thumb_proc)
       create_variant_record(variant, state: "processing")
