@@ -1,3 +1,10 @@
+## [0.7.0]
+
+- **Breaking:** A variant now opts into async processing with `async: true` instead of `processing:`. The `processing:` and `failed:` placeholder options are removed entirely — there is nothing to configure. A variant's `.url` serves the original while pending/processing/failed, and the processed variant once ready.
+- The `async:`-helper UI no longer fetches a placeholder through the representations path on every poll. The processing/failed states render a zero-network sized box with the progress bar floating over it.
+- The failed state now renders the progress bar in its error state (a static red ring with an X, via `@botandrose/progress-bar`'s `error` attribute) rather than a configurable failed SVG. The retry affordance is unchanged.
+- Migration note: replace `processing: <anything>` with `async: true` on each async variant and drop any `failed:` option. Any `:original`/`:blank`/String/Proc placeholder values no longer have an effect.
+
 ## [0.6.0]
 
 - External transforms can now report progress: a `progress` callback records the percent complete and a heartbeat, readable via `#progress` / `#progress_known?` on variants and previews.
