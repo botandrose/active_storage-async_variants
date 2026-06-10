@@ -1,3 +1,9 @@
+## [0.9.0]
+
+- **Breaking:** Split the opinionated UI out into a separate gem, [`active_storage-async_variants-ui`](https://github.com/botandrose/active_storage-async_variants-ui). This gem is now UI-free plumbing — the async state machine, `ProcessJob`, the heartbeat watchdog, the external-service callback endpoint, and the `Transformer` base class. Its only runtime dependency is `activestorage` (no more `turbo-rails` / `isolate_assets`).
+- Moved to the UI gem: `image_tag`/`video_tag` with `async:`/`direct:`, the `<turbo-frame>` state endpoint and partials, the circular progress bar, the filename-bearing placeholder route, the retry affordance, and the `cdn_host` / `parent_controller` / `retry_visible_if` configuration. A variant's `.url` (serving the original until processed) is unchanged.
+- Migration note: apps that relied on the rendering helpers should add `gem "active_storage-async_variants-ui"`. Apps using `active_storage-crucible` or only the variant pipeline need no change.
+
 ## [0.8.0]
 
 - The processing progress bar now advances smoothly between polls: variants expose a `rate` (percent-per-second, derived from the record's `created_at`, last heartbeat, and reported progress) that the `@botandrose/progress-bar` element uses to optimistically creep forward, instead of only stepping on each refresh. Includes a migration adding a `created_at` column to `active_storage_variant_records`; run it before deploying.
