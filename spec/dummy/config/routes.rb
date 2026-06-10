@@ -1,5 +1,4 @@
 Rails.application.routes.draw do
-  get "/session/:user_id", to: "sessions#show", as: :session
-  delete "/session",       to: "sessions#destroy"
-  get "/avatars/:user_id/:variant_name", to: "avatars#show", as: :avatar
+  # The plumbing gem's only HTTP surface is the callbacks endpoint, drawn by the
+  # engine (config/routes.rb). The dummy app itself needs no routes.
 end

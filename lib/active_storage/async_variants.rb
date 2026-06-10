@@ -1,9 +1,6 @@
 # frozen_string_literal: true
 
-require "turbo-rails"
-require "isolate_assets"
 require_relative "async_variants/version"
-require_relative "async_variants/helper"
 require_relative "async_variants/transformer"
 require_relative "async_variants/registry"
 require_relative "async_variants/blob_extension"
@@ -15,40 +12,17 @@ require_relative "async_variants/attachment_extension"
 require_relative "async_variants/reflection_extension"
 require_relative "async_variants/process_job"
 require_relative "async_variants/heartbeat_watchdog_job"
-require_relative "async_variants/asset_tag_helper_extension"
 
 module ActiveStorage
   module AsyncVariants
-    # HTML attributes round-tripped through the state-endpoint URL so the
-    # eventual processed-state render can apply them to the inner <img>/<video>.
-    PASS_THROUGH_HTML_OPTIONS = %i[alt width height controls autoplay preload].freeze
-
-    mattr_accessor :cdn_host
-    mattr_accessor :retry_visible_proc, default: ->(_view) { false }
-
-    # Lets the host app plug its auth chain (and thus `current_user`) into the
-    # gem's StatesController. Set to a string so resolution is deferred until
-    # the host's class is autoloadable. Defaults to ActionController::Base.
-    mattr_accessor :parent_controller, default: "ActionController::Base"
-
     # How long an external transform may go without a heartbeat before the
     # watchdog fails it. Must exceed the transformer's heartbeat interval.
     mattr_accessor :heartbeat_stale_after, default: 60.seconds
 
-    # The transformer's heartbeat cadence. The turbo-frame poll matches it so
-    # each reload lands on fresh progress; keep heartbeat_stale_after well above it.
+    # The transformer's heartbeat cadence. External services report at this
+    # rate; the UI layer's turbo-frame poll matches it. Keep heartbeat_stale_after
+    # well above it.
     mattr_accessor :heartbeat_interval, default: 5.seconds
-
-    # Gates the failed-state retry affordance; the block runs in the view context.
-    def self.retry_visible_if(&block)
-      self.retry_visible_proc = block
-    end
-
-    def self.retry_visible?(view)
-      !!view.instance_exec(&retry_visible_proc)
-    rescue StandardError
-      false
-    end
 
     def self.configure
       yield self
@@ -73,10 +47,6 @@ module ActiveStorage
         # demand, and we just need the extensions in place by the time
         # the first one loads.
         ActiveStorage::AsyncVariants.prepend_model_extensions!
-
-        ActionView::Helpers::AssetTagHelper.prepend(
-          ActiveStorage::AsyncVariants::AssetTagHelperExtension
-        )
       end
     end
 
@@ -104,8 +74,6 @@ module ActiveStorage
         ActiveStorage::AsyncVariants::PreviewExtension
       )
     end
-
-    Assets = IsolateAssets.register(namespace: self, engine: Engine, route_name: :async_variant_asset)
 
     def self.callback_token_for(variant_record)
       ActiveStorage.verifier.generate(variant_record.id, purpose: :async_variant_callback)

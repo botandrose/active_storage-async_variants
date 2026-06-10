@@ -10,9 +10,5 @@ gem "simplecov", require: false
 gem "rspec-rails"
 gem "rails", "~> 8.0.0"
 gem "sqlite3"
-gem "cucumber"
-gem "capybara"
-gem "cuprite"
-gem "puma"
 
 gemspec path: "../"

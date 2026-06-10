@@ -2,6 +2,8 @@
 
 Extends Active Storage with pluggable per-variant transformers, async-safe variant processing, and failure handling.
 
+This gem is the UI-free plumbing. A variant's `.url` serves the original while it is pending/processing/failed, and the processed variant once ready — nothing renders a spinner or progress bar. For the optional turbo-frame UI (`image_tag`/`video_tag` with `async:`/`direct:`, a circular progress bar, and a retry affordance), add the companion gem [`active_storage-async_variants-ui`](https://github.com/botandrose/active_storage-async_variants-ui).
+
 ## The Problem
 
 Active Storage's variant system assumes transformations are fast and reliable -- like generating an image thumbnail. But some transformations are slow (transcoding a 1GB video to 720p VP9) and fallible (the transcode may permanently fail). When you use `process: :later`, Active Storage enqueues a background job, but if the variant is requested before the job finishes, it falls through to synchronous processing -- blocking the request for minutes or timing out entirely. And if the transformation fails, the error bubbles up with no tracking or retry limits.
@@ -62,67 +64,22 @@ In views, use the same Active Storage helpers:
 
 While the variant is still processing (or has failed), this serves the original video. Once processing completes, it serves the transcoded variant.
 
-## `image_tag` / `video_tag` with `async:` and `direct:`
-
-For a polish layer that shows a progress bar while a variant is being processed, polls for completion in the background, and optionally serves the finished variant straight from your CDN, the gem adds two options to `image_tag` and `video_tag`:
-
-```erb
-<%# Variant URL with the async client wired up: a progress bar while pending,
-    polls for completion, swaps to the real image when ready. %>
-<%= image_tag user.avatar.variant(:web), async: true %>
-
-<%# When the variant is ready, render its direct CDN/S3 URL instead of
-    routing through Rails. While pending/failed, falls back to the
-    Rails representation URL (which serves the original). %>
-<%= image_tag user.avatar.variant(:web), direct: true %>
-
-<%# Both together: direct URL once processed, progress bar while pending,
-    polling for completion. %>
-<%= image_tag user.avatar.variant(:web), async: true, direct: true %>
-
-<%# Same for videos. %>
-<%= video_tag user.video.variant(:web), async: true, controls: true %>
-```
-
-The first argument must be a `VariantWithRecord` or `Preview` when either option is set; otherwise `image_tag` / `video_tag` behave exactly as in stock Rails.
-
-### Configure the direct URL host
-
-By default `direct:` uses the storage service's URL (presigned for private buckets, unsigned for public). To serve from a CDN, set the host in an initializer:
-
-```ruby
-# config/initializers/active_storage_async_variants.rb
-ActiveStorage::AsyncVariants.cdn_host = "https://d1234abcd.cloudfront.net"
-```
-
-The resulting URL is `"#{cdn_host}/#{variant.key}"`.
-
-### JavaScript
-
-No manual wiring is required. The async state partials are self-contained `<turbo-frame>`s. The only requirement is that the host app loads **Turbo** -- the gem depends on `turbo-rails`, which a default Rails app already includes.
-
 ## Configuration
 
-Set options in an initializer. The `configure` block groups them (each is also a plain accessor, e.g. `ActiveStorage::AsyncVariants.cdn_host = …`):
+Set options in an initializer. The `configure` block groups them (each is also a plain accessor, e.g. `ActiveStorage::AsyncVariants.heartbeat_interval = …`):
 
 ```ruby
 # config/initializers/active_storage_async_variants.rb
 ActiveStorage::AsyncVariants.configure do |config|
-  config.cdn_host              = "https://d1234abcd.cloudfront.net"
   config.heartbeat_interval    = 5.seconds
   config.heartbeat_stale_after = 60.seconds
-  config.parent_controller     = "ApplicationController"
-  config.retry_visible_if { current_user&.admin? }
 end
 ```
 
 | Option | Default | Purpose |
 |--------|---------|---------|
-| `cdn_host` | `nil` | Host for `direct:` URLs (`"#{cdn_host}/#{variant.key}"`); falls back to the storage service URL. |
-| `heartbeat_interval` | `5.seconds` | Expected cadence of progress heartbeats; the processing `<turbo-frame>` re-polls at this rate. |
+| `heartbeat_interval` | `5.seconds` | Expected cadence of progress heartbeats from external transformers. (The UI gem's processing `<turbo-frame>` re-polls at this rate.) |
 | `heartbeat_stale_after` | `60.seconds` | A processing variant with no heartbeat for this long is marked `failed`. Must exceed `heartbeat_interval`. |
-| `parent_controller` | `"ActionController::Base"` | Base class for the gem's controllers, so the retry view can reach your app's `current_user`. Set as a String. |
-| `retry_visible_if` | off | Block (run in the view context) gating the failed-state retry affordance. |
 
 ## Writing a Transformer
 
@@ -229,7 +186,7 @@ variant.error        # => error message string, or nil
 
 ## Placeholders
 
-There is nothing to configure. A variant's `.url` serves the original while it is pending, processing, or failed, and the processed variant once ready. With `async: true` on `image_tag`/`video_tag`, the gem instead shows a circular progress bar while processing, and a red error glyph -- the same progress bar in its error state -- once the variant has permanently failed.
+There is nothing to configure. A variant's `.url` serves the original while it is pending, processing, or failed, and the processed variant once ready. (For a circular progress bar while processing and a red error glyph once failed, add the [`active_storage-async_variants-ui`](https://github.com/botandrose/active_storage-async_variants-ui) gem.)
 
 ## Failure Handling
 
