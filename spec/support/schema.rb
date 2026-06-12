@@ -49,12 +49,6 @@ module DummySchema
         create_table :active_storage_variant_records do |t|
           t.belongs_to :blob, null: false, index: false
           t.string :variation_digest, null: false
-          t.string :state, default: "pending"
-          t.text :error
-          t.integer :attempts, default: 0
-          t.integer :progress
-          t.datetime :last_heartbeat_at
-          t.datetime :created_at
           t.index [:blob_id, :variation_digest], name: "index_active_storage_variant_records_uniqueness", unique: true
           t.foreign_key :active_storage_blobs, column: :blob_id
         end
@@ -63,6 +57,9 @@ module DummySchema
           t.timestamps
         end
       end
+
+      ActiveRecord::Migration.verbose = false
+      ActiveRecord::MigrationContext.new([File.expand_path("../../db/migrate", __dir__)]).migrate
     end
 
     # Transformers shared by all suites.
