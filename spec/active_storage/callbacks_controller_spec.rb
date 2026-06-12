@@ -85,6 +85,64 @@ RSpec.describe "async variants: callback endpoint" do
       expect(@user.avatar.blob.checksum).to eq(original_checksum)
     end
 
+    it "enqueues a mirror job for a reconciled blob on a mirror service" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      placeholder = ActiveStorage::Blob.create_before_direct_upload!(
+        filename: "thumb.webp", content_type: "image/webp",
+        service_name: "mirror", byte_size: 0, checksum: "0",
+      )
+      variant_record.image.attach(placeholder)
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+      clear_enqueued_jobs
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "success", byte_size: 4567, checksum: "eM4lMR7iY0vWpgLrqBXddg==" },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(ActiveStorage::MirrorJob)
+        .to have_been_enqueued.with(placeholder.key, checksum: "eM4lMR7iY0vWpgLrqBXddg==")
+    end
+
+    it "does not enqueue a mirror job when no checksum is reported" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      placeholder = ActiveStorage::Blob.create_before_direct_upload!(
+        filename: "thumb.webp", content_type: "image/webp",
+        service_name: "mirror", byte_size: 0, checksum: "0",
+      )
+      variant_record.image.attach(placeholder)
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+      clear_enqueued_jobs
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "success", byte_size: 4567 },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(ActiveStorage::MirrorJob).not_to have_been_enqueued
+    end
+
+    it "does not enqueue a mirror job on a non-mirror service" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      placeholder = ActiveStorage::Blob.create_before_direct_upload!(
+        filename: "thumb.webp", content_type: "image/webp",
+        service_name: "test", byte_size: 0, checksum: "0",
+      )
+      variant_record.image.attach(placeholder)
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+      clear_enqueued_jobs
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "success", byte_size: 4567, checksum: "eM4lMR7iY0vWpgLrqBXddg==" },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(ActiveStorage::MirrorJob).not_to have_been_enqueued
+    end
+
     it "records progress and a heartbeat on a progress callback" do
       variant = @user.avatar.variant(:thumb)
       variant_record = create_variant_record(variant, state: "processing")

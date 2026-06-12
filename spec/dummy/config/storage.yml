@@ -1,3 +1,13 @@
 test:
   service: TestCloud
   root: <%= Rails.root.join("tmp/storage") %>
+
+mirror_disk:
+  service: Disk
+  root: <%= Rails.root.join("tmp/storage_mirror") %>
+
+mirror:
+  service: Mirror
+  primary: test
+  mirrors:
+    - mirror_disk
