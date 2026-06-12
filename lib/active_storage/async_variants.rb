@@ -3,6 +3,7 @@
 require_relative "async_variants/version"
 require_relative "async_variants/transformer"
 require_relative "async_variants/registry"
+require_relative "async_variants/named_variant_scan"
 require_relative "async_variants/blob_extension"
 require_relative "async_variants/variation_extension"
 require_relative "async_variants/variant_with_record_extension"
@@ -73,6 +74,25 @@ module ActiveStorage
       ActiveStorage::Preview.prepend(
         ActiveStorage::AsyncVariants::PreviewExtension
       )
+    end
+
+    # Attaches a frame placeholder (byte_size 0, checksum "0") as the blob's
+    # preview_image, mirroring stock's once-per-blob preview extraction. The
+    # external transformer writes the real frame to it; the success callback
+    # reconciles the sentinel metadata.
+    def self.ensure_preview_image_placeholder!(blob)
+      return blob.preview_image.blob if blob.preview_image.attached?
+
+      frame = ActiveStorage::Blob.create_before_direct_upload!(
+        filename: "#{blob.filename.base}.jpg",
+        content_type: "image/jpeg",
+        metadata: { analyzed: true },
+        service_name: blob.service_name,
+        byte_size: 0,
+        checksum: "0",
+      )
+      blob.preview_image.attach(frame)
+      frame
     end
 
     def self.callback_token_for(variant_record)

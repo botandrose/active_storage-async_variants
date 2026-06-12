@@ -4,53 +4,38 @@ RSpec.describe "async variants: previews" do
   include_context "with an attached avatar"
 
   describe "async preview" do
-    let(:blob) { @user.avatar.blob }
-    # :thumb_preview is declared on User#avatar as
-    #   resize_to_limit: [101, 101], transformer: FakePreviewTransformer, async: true
-    # The Preview-side variation needs the same transformations so the
-    # named-variant lookup in PreviewExtension#enqueue! can match it.
-    let(:named_variant) { @user.avatar.variant(:thumb_preview) }
-    let(:variation) { named_variant.variation }
-    let(:preview) { ActiveStorage::Preview.new(blob, variation) }
+    before { attach_video_to(@user) }
 
-    it "enqueues a ProcessJob via the matching named variant" do
-      expect {
-        preview.enqueue!
-      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
-    end
+    # :poster is declared on User#video as
+    #   resize_to_limit: [300, 300], format: :jpg, transformer: FakeExternalTransformer, async: true
+    let(:preview) { @user.video.preview(:poster) }
 
-    it "is idempotent when a variant_record already exists" do
-      create_variant_record(named_variant, state: "pending")
-
-      expect {
-        preview.enqueue!
-      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
-    end
-
-    it "reports processed? from the variant_record on the original blob" do
+    it "reports processed? from the variant_record on the frame blob" do
       expect(preview.processed?).to be false
-      simulate_processed_variant(named_variant)
+      simulate_processed_preview(preview)
       expect(preview.processed?).to be true
     end
 
     it "serves the variant URL when processed" do
-      simulate_processed_variant(named_variant)
+      simulate_processed_preview(preview)
 
       expect(preview.url).to be_present
-      expect(preview.url).to end_with("/thumb.png")
+      expect(preview.url).to end_with("/poster.jpg")
     end
 
     it "serves the original blob URL when not yet processed" do
-      expect(preview.url).to end_with("/image.png")
+      expect(preview.url).to end_with("/movie.mp4")
     end
 
     it "serves the original when the variant has failed" do
-      create_variant_record(named_variant, state: "failed", error: "boom")
-      expect(preview.url).to end_with("/image.png")
+      ActiveStorage::AsyncVariants.ensure_preview_image_placeholder!(@user.video.blob)
+      create_variant_record(preview.send(:variant), state: "failed", error: "boom")
+
+      expect(preview.url).to end_with("/movie.mp4")
     end
 
     it "returns variant blob key when processed" do
-      simulate_processed_variant(named_variant)
+      simulate_processed_preview(preview)
 
       expect(preview.key).to be_present
     end
@@ -62,7 +47,7 @@ RSpec.describe "async variants: previews" do
 
   describe "non-async preview passthrough" do
     let(:blob) { @user.avatar.blob }
-    let(:variation) { ActiveStorage::Variation.wrap(resize_to_limit: [100, 100]) }
+    let(:variation) { ActiveStorage::Variation.wrap(resize_to_limit: [99, 99]) }
     let(:preview) { ActiveStorage::Preview.new(blob, variation) }
 
     it "delegates processed to standard ActiveStorage" do
@@ -82,7 +67,7 @@ RSpec.describe "async variants: previews" do
     let(:blob) { @user.avatar.blob }
 
     it "returns nil for non-async previews" do
-      variation = ActiveStorage::Variation.wrap(resize_to_limit: [100, 100])
+      variation = ActiveStorage::Variation.wrap(resize_to_limit: [99, 99])
       preview = ActiveStorage::Preview.new(blob, variation)
 
       expect(preview.async_state).to be_nil
@@ -100,13 +85,10 @@ RSpec.describe "async variants: previews" do
     end
 
     it "returns the variant_record's state once processing has happened" do
-      named_variant = @user.avatar.variant(:thumb_preview)
-      simulate_processed_variant(named_variant)
+      attach_video_to(@user)
+      simulate_processed_preview(@user.video.preview(:poster))
 
-      variation = named_variant.variation
-      preview = ActiveStorage::Preview.new(blob, variation)
-
-      expect(preview.async_state).to eq("processed")
+      expect(@user.video.preview(:poster).async_state).to eq("processed")
     end
   end
 

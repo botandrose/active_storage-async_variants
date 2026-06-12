@@ -22,7 +22,12 @@ The gem works by prepending extension modules onto Active Storage classes:
 - **`VariationExtension`** → `ActiveStorage::Variation` — extracts async options (`async:`, `transformer:`) from variant config before passing the rest to standard Active Storage
 - **`AttachmentExtension`** → `ActiveStorage::Attachment` — hooks into `transform_variants_later` to enqueue `ProcessJob` for variants with `async: true`
 - **`VariantWithRecordExtension`** → `ActiveStorage::VariantWithRecord` — overrides URL generation to serve the original blob while not ready; adds state query methods (`processed?`, `processing?`, `pending?`, `failed?`)
-- **`ProcessJob`** — background job that determines transformer type (inline vs external) and processes accordingly
+- **`PreviewExtension`** → `ActiveStorage::Preview` — blocks the synchronous preview transform for async variants and resolves state/URLs through the stock preview graph
+- **`ProcessJob`** — background job that resolves the attachment's representation (variant vs preview), determines transformer type (inline vs external), and processes accordingly
+
+### Preview Structure
+
+Async previews persist the same graph stock Active Storage builds: the extracted frame is attached as the source blob's `preview_image`, and the variant record hangs off the *frame* blob, not the source. External transformers get a frame placeholder (`byte_size: 0, checksum: "0"`) the service writes into; the success callback reconciles both the variant and frame placeholders. Inline/default transformers extract the real frame up front via the stock previewer.
 
 ### Transformer Types
 

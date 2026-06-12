@@ -84,6 +84,19 @@ module DummySchema
 
     Object.const_set :FakePreviewTransformer, CopyTransformer
 
+    # Stands in for ffmpeg: accepts video blobs and "extracts" a fixture frame.
+    Object.const_set :FakePreviewer, Class.new(ActiveStorage::Previewer) {
+      def self.accept?(blob)
+        blob.video?
+      end
+
+      def preview(**options)
+        yield io: File.open("spec/support/fixtures/image.png"),
+          filename: "frame.jpg", content_type: "image/jpeg", **options
+      end
+    }
+    ActiveStorage.previewers = [FakePreviewer]
+
     Object.const_set :User, Class.new(ActiveRecord::Base) {
       has_one_attached :avatar do |attachable|
         attachable.variant :thumb,          resize_to_limit: [100, 100], async: true
@@ -93,6 +106,12 @@ module DummySchema
         attachable.variant :thumb_external, transformer: FakeExternalTransformer, async: true
         attachable.variant :thumb_proc,     resize_to_limit: [600, 600], async: true
         attachable.variant :thumb_preview,  resize_to_limit: [101, 101], transformer: FakePreviewTransformer, async: true
+      end
+
+      has_one_attached :video do |attachable|
+        attachable.variant :poster,        resize_to_limit: [300, 300], format: :jpg,  transformer: FakeExternalTransformer, async: true
+        attachable.variant :poster_web,    resize_to_limit: [600, 338], format: :webp, transformer: FakeExternalTransformer, async: true
+        attachable.variant :poster_inline, resize_to_limit: [50, 50],   format: :png,  transformer: CopyTransformer,         async: true
       end
     }
   end
@@ -143,4 +162,33 @@ def attach_avatar_to(user)
     content_type: "image/png",
     service_name: "test",
   )
+end
+
+def attach_video_to(user)
+  user.video.attach(
+    io: File.open("spec/support/fixtures/image.png"),
+    filename: "movie.mp4",
+    content_type: "video/mp4",
+    identify: false,
+    service_name: "test",
+  )
+end
+
+# Builds the stock preview graph in a processed state: a real frame attached as
+# preview_image, the variant record on the frame blob, and the variant image.
+def simulate_processed_preview(preview)
+  preview.blob.preview_image.attach(
+    io: File.open("spec/support/fixtures/image.png"),
+    filename: "frame.jpg",
+    content_type: "image/jpeg",
+    service_name: "test",
+  )
+  record = create_variant_record(preview.send(:variant), state: "processed")
+  record.image.attach(
+    io: File.open("spec/support/fixtures/image.png"),
+    filename: "poster.jpg",
+    content_type: "image/jpeg",
+    service_name: "test",
+  )
+  record
 end

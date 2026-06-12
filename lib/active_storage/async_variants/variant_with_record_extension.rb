@@ -103,32 +103,8 @@ module ActiveStorage
       # a fallback when the Registry is cold (e.g. in dev, when a
       # RepresentationsRedirectController request hits a worker that hasn't
       # autoloaded the consumer model yet).
-      #
-      # Walks one level through preview_image attachments so a request for
-      # a Variant of a video's extracted preview frame can still find the
-      # named variant declared on the parent record's source-video field.
       def find_named_async_variant
-        target = variation.transformations.to_json
-        scan_for_named_variant(blob, target)
-      end
-
-      def scan_for_named_variant(blob_to_scan, target, depth: 0)
-        blob_to_scan.attachments.each do |attachment|
-          if attachment.name == "preview_image" && attachment.record_type == "ActiveStorage::Blob" && depth < 1
-            source = ActiveStorage::Blob.find_by(id: attachment.record_id)
-            result = source && scan_for_named_variant(source, target, depth: depth + 1)
-            return result if result
-            next
-          end
-
-          attachment.send(:named_variants).each do |name, _|
-            candidate = attachment.variant(name.to_sym)
-            if candidate.variation.transformations.to_json == target
-              return [attachment, name, candidate.variation.async_options] if candidate.variation.async_options[:async]
-            end
-          end
-        end
-        nil
+        ActiveStorage::AsyncVariants::NamedVariantScan.find(blob, variation)
       end
 
       def async_record

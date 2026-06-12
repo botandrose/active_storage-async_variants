@@ -11,13 +11,19 @@ module ActiveStorage
       end
 
       def enqueue!
-        if result = find_named_async_variant
-          attachment, variant_name, _ = result
+        return if find_preview_variant_record
 
-          blob.variant_records.create!(
-            variation_digest: variation.digest,
-            state: "pending",
-          )
+        if result = ActiveStorage::AsyncVariants::NamedVariantScan.find(blob, variation)
+          attachment, variant_name, options = result
+
+          transformer = options[:transformer]
+          if transformer && !transformer.new.inline?
+            ActiveStorage::AsyncVariants.ensure_preview_image_placeholder!(blob)
+            blob.preview_image.blob.variant_records.create!(
+              variation_digest: variant.variation.digest,
+              state: "pending",
+            )
+          end
           ActiveStorage::AsyncVariants::ProcessJob.perform_later(
             attachment.record, attachment.name, variant_name.to_s,
           )
@@ -80,31 +86,21 @@ module ActiveStorage
         @resolved_async_options ||=
           variation.async_options.presence ||
           ActiveStorage::AsyncVariants::Registry[variation.digest] ||
-          find_named_async_variant&.dig(2) ||
+          ActiveStorage::AsyncVariants::NamedVariantScan.find(blob, variation)&.dig(2) ||
           {}
-      end
-
-      def find_named_async_variant
-        target = variation.transformations.to_json
-        blob.attachments.each do |attachment|
-          attachment.send(:named_variants).each do |name, _|
-            candidate = attachment.variant(name.to_sym)
-            next unless candidate.variation.transformations.to_json == target
-            return [attachment, name, candidate.variation.async_options] if candidate.variation.async_options[:async]
-          end
-        end
-        nil
       end
 
       def preview_variant_processed?
         find_preview_variant_record&.state == "processed"
       end
 
-      # ProcessJob stores variant_records on the source blob (i.e. @variant.blob,
-      # which for a named variant declared on a previewable attachment is the
-      # original blob -- not preview_image.blob). Read from the same place.
+      # Stock preview structure: variant records hang off the extracted frame
+      # (the blob's preview_image attachment), not the source blob. The digest
+      # is resolved through stock's Preview#variant so it matches the
+      # default_to-applied variation embedded in representation URLs.
       def find_preview_variant_record
-        blob.variant_records.find_by(variation_digest: variation.digest)
+        return nil unless blob.preview_image.attached?
+        blob.preview_image.blob.variant_records.find_by(variation_digest: variant.variation.digest)
       end
 
       # Serve the original until the preview variant is processed.

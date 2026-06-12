@@ -9,24 +9,12 @@ module ActiveStorage
 
       def perform(record, attachment_name, variant_name)
         attachment = record.public_send(attachment_name)
-        @variant = attachment.variant(variant_name.to_sym)
-        variation = @variant.variation
-        @async_options = variation.async_options
-        transformer_class = @async_options[:transformer]
-        blob = @variant.blob
+        representation = attachment.representation(variant_name.to_sym)
 
-        @variant_record = blob.variant_records.create_or_find_by!(variation_digest: variation.digest)
-        @variant_record.update!(state: "processing")
-
-        if transformer_class
-          transformer = transformer_class.new
-          if transformer.inline?
-            process_inline(blob, @variant_record, transformer, variation)
-          else
-            process_external(blob, @variant_record, transformer, variation)
-          end
+        if representation.is_a?(ActiveStorage::Preview)
+          perform_preview(representation)
         else
-          process_default(blob, @variant_record, variation)
+          perform_variant(representation)
         end
       rescue => e
         @variant_record&.update!(
@@ -38,6 +26,52 @@ module ActiveStorage
       end
 
       private
+
+      def perform_variant(variant)
+        blob = variant.blob
+        @variant_record = blob.variant_records.create_or_find_by!(variation_digest: variant.variation.digest)
+        @variant_record.update!(state: "processing")
+
+        dispatch(variant.variation, transform_blob: blob, source_blob: blob)
+      end
+
+      # Stock preview structure: the frame lives as a preview_image attachment
+      # on the source blob, and the variant record hangs off the frame blob.
+      # Inline/default transformers need the real frame up front (the stock
+      # previewer extracts it); external transformers get a placeholder the
+      # service writes into, plus the source blob to extract from.
+      def perform_preview(preview)
+        blob = preview.blob
+        transformer_class = preview.variation.async_options[:transformer]
+
+        if transformer_class.nil? || transformer_class.new.inline?
+          preview.send(:process) unless blob.preview_image.attached?
+        else
+          ActiveStorage::AsyncVariants.ensure_preview_image_placeholder!(blob)
+        end
+
+        frame_blob = blob.preview_image.blob
+        variation = preview.send(:variant).variation
+        @variant_record = frame_blob.variant_records.create_or_find_by!(variation_digest: variation.digest)
+        @variant_record.update!(state: "processing")
+
+        dispatch(variation, transform_blob: frame_blob, source_blob: blob)
+      end
+
+      def dispatch(variation, transform_blob:, source_blob:)
+        transformer_class = variation.async_options[:transformer]
+
+        if transformer_class
+          transformer = transformer_class.new
+          if transformer.inline?
+            process_inline(transform_blob, @variant_record, transformer, variation)
+          else
+            process_external(source_blob, @variant_record, transformer, variation)
+          end
+        else
+          process_default(transform_blob, @variant_record, variation)
+        end
+      end
 
       def process_inline(blob, variant_record, transformer, variation)
         options = variation.transformations
