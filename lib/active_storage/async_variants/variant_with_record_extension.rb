@@ -87,7 +87,7 @@ module ActiveStorage
       private
 
       def async_variant?
-        resolved_async_options[:async].present?
+        resolved_async_options[:transformer].present?
       end
 
       def resolved_async_options

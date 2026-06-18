@@ -3,8 +3,8 @@
 module ActiveStorage
   module AsyncVariants
     # Finds the async named-variant declaration whose transformations match a
-    # variation, starting from a blob's attachments. Used to recover
-    # :async/:transformer options when the Registry is cold, and by
+    # variation, starting from a blob's attachments. Used to recover the
+    # :transformer option when the Registry is cold, and by
     # Preview/VariantWithRecord enqueue paths to locate the attachment to
     # dispatch ProcessJob against.
     #
@@ -29,7 +29,7 @@ module ActiveStorage
 
           attachment.send(:named_variants).each do |name, named_variant|
             candidate = ActiveStorage::Variation.wrap(named_variant.transformations)
-            next unless candidate.async_options[:async]
+            next unless candidate.async_options[:transformer]
             return [attachment, name, candidate.async_options] if matches?(candidate, variation)
           end
         end

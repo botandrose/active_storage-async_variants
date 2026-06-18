@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-A Rails engine gem that extends Active Storage with async-safe variant processing. Solves the problem where slow transformations (e.g., video transcoding) block requests or fail silently. The `async: true` option on a variant definition opts it into async processing.
+A Rails engine gem that extends Active Storage with async-safe variant processing. Solves the problem where slow transformations (e.g., video transcoding) block requests or fail silently. Naming a `transformer:` on a variant definition opts it into async processing.
 
 ## Commands
 
@@ -19,8 +19,8 @@ bundle exec rspec spec/active_storage/async_variants_spec.rb -e "description" # 
 
 The gem works by prepending extension modules onto Active Storage classes:
 
-- **`VariationExtension`** → `ActiveStorage::Variation` — extracts async options (`async:`, `transformer:`) from variant config before passing the rest to standard Active Storage
-- **`AttachmentExtension`** → `ActiveStorage::Attachment` — hooks into `transform_variants_later` to enqueue `ProcessJob` for variants with `async: true`
+- **`VariationExtension`** → `ActiveStorage::Variation` — extracts the `transformer:` option from variant config before passing the rest to standard Active Storage
+- **`AttachmentExtension`** → `ActiveStorage::Attachment` — hooks into `transform_variants_later` to enqueue `ProcessJob` for variants that name a `transformer:`
 - **`VariantWithRecordExtension`** → `ActiveStorage::VariantWithRecord` — overrides URL generation to serve the original blob while not ready; adds state query methods (`processed?`, `processing?`, `pending?`, `failed?`)
 - **`PreviewExtension`** → `ActiveStorage::Preview` — blocks the synchronous preview transform for async variants and resolves state/URLs through the stock preview graph
 - **`ProcessJob`** — background job that resolves the attachment's representation (variant vs preview), determines transformer type (inline vs external), and processes accordingly
@@ -31,10 +31,11 @@ Async previews persist the same graph stock Active Storage builds: the extracted
 
 ### Transformer Types
 
-- **Inline**: implements `process(file, **options)` → blocks worker, returns `{ io:, content_type:, filename: }`
-- **External**: implements `initiate(source_url:, destination_url:, callback_url:, **options)` → frees worker immediately, external service POSTs to callback URL when done
+Naming a `transformer:` is the async opt-in; the kind is determined by what the transformer overrides (`Transformer#standard?`/`#inline?`/`#external?`):
 
-The gem detects which type by checking if `process` is overridden on the transformer class.
+- **Standard** (`ActiveStorage::AsyncVariants::Standard`): overrides neither → runs the stock Active Storage variant pipeline in the background. Replaces the old bare `async: true` (no transformer) declaration.
+- **Inline**: overrides `process(file, **options)` → blocks worker, returns `{ io:, content_type:, filename: }`
+- **External**: overrides `initiate(source_url:, callback_url:, **options)` → frees worker immediately, external service POSTs to callback URL when done
 
 ### Callback Endpoint
 

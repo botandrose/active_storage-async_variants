@@ -7,7 +7,7 @@ RSpec.describe "async variants: previews" do
     before { attach_video_to(@user) }
 
     # :poster is declared on User#video as
-    #   resize_to_limit: [300, 300], format: :jpg, transformer: FakeExternalTransformer, async: true
+    #   resize_to_limit: [300, 300], format: :jpg, transformer: FakeExternalTransformer
     let(:preview) { @user.video.preview(:poster) }
 
     it "reports processed? from the variant_record on the frame blob" do
@@ -77,7 +77,6 @@ RSpec.describe "async variants: previews" do
       variation = ActiveStorage::Variation.wrap(
         resize_to_limit: [100, 100],
         transformer: FakePreviewTransformer,
-        async: true,
       )
       preview = ActiveStorage::Preview.new(blob, variation)
 
@@ -95,10 +94,9 @@ RSpec.describe "async variants: previews" do
   describe "Preview with URL-reconstructed variation (controller path)" do
     # When the RedirectController resolves a representation from the URL, it
     # rebuilds a Variation from the URL's variation_key. That key only carries
-    # transformations -- :async / :transformer are stripped at
-    # Variation#initialize and not embedded in the URL. The gem must recover
-    # async_options by matching the rebuilt variation against the blob's
-    # attached named variants.
+    # transformations -- :transformer is stripped at Variation#initialize and
+    # not embedded in the URL. The gem must recover async_options by matching
+    # the rebuilt variation against the blob's attached named variants.
     let(:blob) { @user.avatar.blob }
     let(:source_variant) { @user.avatar.variant(:thumb_preview) }
     let(:url_variation) { ActiveStorage::Variation.wrap(source_variant.variation.transformations) }

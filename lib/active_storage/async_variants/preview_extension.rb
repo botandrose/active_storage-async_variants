@@ -17,7 +17,7 @@ module ActiveStorage
           attachment, variant_name, options = result
 
           transformer = options[:transformer]
-          if transformer && !transformer.new.inline?
+          if transformer&.new&.external?
             ActiveStorage::AsyncVariants.ensure_preview_image_placeholder!(blob)
             blob.preview_image.blob.variant_records.create!(
               variation_digest: variant.variation.digest,
@@ -73,12 +73,12 @@ module ActiveStorage
       private
 
       def async_preview?
-        resolved_async_options[:async].present?
+        resolved_async_options[:transformer].present?
       end
 
       # Variations rebuilt from the redirect URL only carry transformations --
-      # :async / :transformer are stripped at Variation#initialize and not
-      # embedded in the URL key. Recover them via the digest-keyed registry that
+      # :transformer is stripped at Variation#initialize and not
+      # embedded in the URL key. Recover it via the digest-keyed registry that
       # VariationExtension warms on every view-side variant call, or fall back to
       # scanning attached named variants when the registry is cold (autoloader
       # hasn't touched the consumer model yet).

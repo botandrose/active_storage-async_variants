@@ -99,19 +99,19 @@ module DummySchema
 
     Object.const_set :User, Class.new(ActiveRecord::Base) {
       has_one_attached :avatar do |attachable|
-        attachable.variant :thumb,          resize_to_limit: [100, 100], async: true
+        attachable.variant :thumb,          resize_to_limit: [100, 100], transformer: ActiveStorage::AsyncVariants::Standard
         attachable.variant :thumb_sync,     resize_to_limit: [200, 200]
-        attachable.variant :thumb_inline,   transformer: CopyTransformer,         async: true
-        attachable.variant :thumb_failing,  transformer: FailingTransformer,      async: true
-        attachable.variant :thumb_external, transformer: FakeExternalTransformer, async: true
-        attachable.variant :thumb_proc,     resize_to_limit: [600, 600], async: true
-        attachable.variant :thumb_preview,  resize_to_limit: [101, 101], transformer: FakePreviewTransformer, async: true
+        attachable.variant :thumb_inline,   transformer: CopyTransformer
+        attachable.variant :thumb_failing,  transformer: FailingTransformer
+        attachable.variant :thumb_external, transformer: FakeExternalTransformer
+        attachable.variant :thumb_proc,     resize_to_limit: [600, 600], transformer: ActiveStorage::AsyncVariants::Standard
+        attachable.variant :thumb_preview,  resize_to_limit: [101, 101], transformer: FakePreviewTransformer
       end
 
       has_one_attached :video do |attachable|
-        attachable.variant :poster,        resize_to_limit: [300, 300], format: :jpg,  transformer: FakeExternalTransformer, async: true
-        attachable.variant :poster_web,    resize_to_limit: [600, 338], format: :webp, transformer: FakeExternalTransformer, async: true
-        attachable.variant :poster_inline, resize_to_limit: [50, 50],   format: :png,  transformer: CopyTransformer,         async: true
+        attachable.variant :poster,        resize_to_limit: [300, 300], format: :jpg,  transformer: FakeExternalTransformer
+        attachable.variant :poster_web,    resize_to_limit: [600, 338], format: :webp, transformer: FakeExternalTransformer
+        attachable.variant :poster_inline, resize_to_limit: [50, 50],   format: :png,  transformer: CopyTransformer
       end
     }
   end

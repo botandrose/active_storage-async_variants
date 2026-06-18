@@ -21,7 +21,7 @@ bin/rails db:migrate
 
 ## Usage
 
-Add `async: true` to any named variant to opt into the async pipeline:
+Name a `transformer:` on any variant to opt it into the async pipeline:
 
 ```ruby
 class User < ApplicationRecord
@@ -29,32 +29,33 @@ class User < ApplicationRecord
     attachable.variant :web,
       transformer: VideoTranscoder,
       codec: "vp9",
-      resolution: "720p",
-      async: true
+      resolution: "720p"
   end
 end
 ```
 
-The presence of `async: true` is what opts a variant into async processing. Without it, variants behave exactly as they do in standard Active Storage. The `transformer:` option is independent -- you can use a custom transformer synchronously, or use the default transformer asynchronously:
+The presence of a `transformer:` is what opts a variant into async processing. Without it, variants behave exactly as they do in standard Active Storage. The transformer also says *how* the work happens — there are three kinds, distinguished by what they implement:
 
 ```ruby
 has_one_attached :video do |attachable|
-  # Async with custom transformer (video transcode)
+  # External: hands off to a remote service (implements #initiate)
   attachable.variant :web,
     transformer: VideoTranscoder,
-    codec: "vp9",
-    async: true
+    codec: "vp9"
 
-  # Async with default transformer (large image resize that's too slow for inline)
+  # Standard: the stock Active Storage variant pipeline, run in the background
+  # (e.g. a large image resize that's too slow for an inline request)
   attachable.variant :thumbnail,
     resize_to_limit: [200, 200],
-    async: true
+    transformer: ActiveStorage::AsyncVariants::Standard
 
-  # Sync with custom transformer (fast custom processing, no opt-in needed)
+  # Inline: custom processing in the worker (implements #process)
   attachable.variant :watermarked,
     transformer: WatermarkStamper
 end
 ```
+
+A variant with no `transformer:` is a plain synchronous Active Storage variant — the gem stays out of the way.
 
 In views, use the same Active Storage helpers:
 

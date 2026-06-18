@@ -14,7 +14,7 @@ module ActiveStorage
         return unless blob.bucket_backed?
 
         named_variants.each do |name, named_variant|
-          next unless named_variant.transformations.key?(:async)
+          next unless named_variant.transformations.key?(:transformer)
 
           ActiveStorage::AsyncVariants::ProcessJob.perform_later(
             record, self.name, name.to_s,

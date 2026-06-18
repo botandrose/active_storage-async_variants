@@ -37,17 +37,16 @@ module ActiveStorage
 
       # Stock preview structure: the frame lives as a preview_image attachment
       # on the source blob, and the variant record hangs off the frame blob.
-      # Inline/default transformers need the real frame up front (the stock
+      # Standard/inline transformers need the real frame up front (the stock
       # previewer extracts it); external transformers get a placeholder the
       # service writes into, plus the source blob to extract from.
       def perform_preview(preview)
         blob = preview.blob
-        transformer_class = preview.variation.async_options[:transformer]
 
-        if transformer_class.nil? || transformer_class.new.inline?
-          preview.send(:process) unless blob.preview_image.attached?
-        else
+        if transformer_for(preview.variation).external?
           ActiveStorage::AsyncVariants.ensure_preview_image_placeholder!(blob)
+        else
+          preview.send(:process) unless blob.preview_image.attached?
         end
 
         frame_blob = blob.preview_image.blob
@@ -59,18 +58,19 @@ module ActiveStorage
       end
 
       def dispatch(variation, transform_blob:, source_blob:)
-        transformer_class = variation.async_options[:transformer]
+        transformer = transformer_for(variation)
 
-        if transformer_class
-          transformer = transformer_class.new
-          if transformer.inline?
-            process_inline(transform_blob, @variant_record, transformer, variation)
-          else
-            process_external(source_blob, @variant_record, transformer, variation)
-          end
-        else
+        if transformer.standard?
           process_default(transform_blob, @variant_record, variation)
+        elsif transformer.inline?
+          process_inline(transform_blob, @variant_record, transformer, variation)
+        else
+          process_external(source_blob, @variant_record, transformer, variation)
         end
+      end
+
+      def transformer_for(variation)
+        (variation.async_options[:transformer] || ActiveStorage::AsyncVariants::Standard).new
       end
 
       def process_inline(blob, variant_record, transformer, variation)
