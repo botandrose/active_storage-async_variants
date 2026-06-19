@@ -68,5 +68,26 @@ RSpec.describe "async variants: progress reporting" do
       expect(preview.progress_known?).to be true
       expect(preview.last_heartbeat_at).to eq(heartbeat)
     end
+
+    it "reports a progress rate of percent over elapsed processing time" do
+      record = create_frame_record
+      base = Time.current
+      record.update!(progress: 42, created_at: base - 84, last_heartbeat_at: base)
+
+      expect(preview.progress_rate).to eq(0.5)
+    end
+
+    it "reports a nil rate before any progress" do
+      create_frame_record
+
+      expect(preview.progress_rate).to be_nil
+    end
+
+    it "exposes the frame record's error" do
+      record = create_frame_record
+      record.update!(state: "failed", error: "boom")
+
+      expect(preview.error).to eq("boom")
+    end
   end
 end

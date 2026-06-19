@@ -66,8 +66,22 @@ module ActiveStorage
         !find_preview_variant_record&.progress.nil?
       end
 
+      # Mirror of VariantWithRecordExtension so a Preview is a drop-in for the
+      # UI layer's progress protocol: percent-per-second over elapsed processing
+      # time, driving the progress bar's optimistic creep between polls.
+      def progress_rate
+        record = find_preview_variant_record
+        return nil unless record&.created_at && record.last_heartbeat_at && record.progress&.positive?
+        elapsed = record.last_heartbeat_at - record.created_at
+        elapsed.positive? ? (record.progress / elapsed).round(4) : nil
+      end
+
       def last_heartbeat_at
         find_preview_variant_record&.last_heartbeat_at
+      end
+
+      def error
+        find_preview_variant_record&.error
       end
 
       private
