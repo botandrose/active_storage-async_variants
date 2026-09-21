@@ -1,3 +1,14 @@
+## [0.10.0]
+
+- **Breaking:** Async previews now persist the same graph stock Active Storage builds. For a previewable blob (a video), an image-format variant is a `Preview`: the extracted frame is attached as the source blob's `preview_image`, and the variant record hangs off the *frame* blob, not the source. `ProcessJob` resolves the attachment's `representation` and takes the preview path when stock would. External transformers receive a frame placeholder (`byte_size: 0, checksum: "0"`) to write into; the success callback reconciles both placeholders. Read video stills through `representation`/`preview`, not `variant`.
+- **Breaking:** Naming a `transformer:` is now the only async opt-in. The `async:` option is gone and raises `ArgumentError`. The built-in `ActiveStorage::AsyncVariants::Standard` transformer replaces a bare `async: true` (the stock variant pipeline, run in the background). A transformer's kind follows from what it overrides: `Transformer#standard?` (neither), `#inline?` (`process`), `#external?` (`initiate`).
+- Migration note: existing variant records for video stills live on the source blob under the old structure. Move them onto the frame blob (`UPDATE active_storage_variant_records SET blob_id = <frame>`), attaching a placeholder frame where none exists; the `variation_digest` is unchanged. Records whose output is itself a video (transcodes) stay on the source. Replace `async: true` with `transformer: ActiveStorage::AsyncVariants::Standard` where no transformer was named, and drop it where one was.
+- `Preview` speaks the same progress protocol as `VariantWithRecord`: `async_state`, `progress`, `progress_known?`, `progress_rate`, `last_heartbeat_at`, `error`.
+- `async_record` is public on both `VariantWithRecord` and `Preview`, and both gain `retry!` (drop a failed record, then `enqueue!`), so callers need not know where a representation keeps its record.
+- `NamedVariantScan` compares declarations structurally instead of instantiating `attachment.variant`, which raises for videos.
+- MirrorService: the success callback mirrors reconciled variant blobs to the mirrors, as Rails does for direct uploads, and `bucket_backed?` resolves through the primary service.
+- Ships the `state`/`error`/`attempts` migration for `active_storage_variant_records` (guarded with `if_not_exists`, so apps that added the columns themselves can install it harmlessly), and builds the test schema from `db/migrate` so a missing shipped migration fails the suite.
+
 ## [0.9.0]
 
 - **Breaking:** Split the opinionated UI out into a separate gem, [`active_storage-async_variants-ui`](https://github.com/botandrose/active_storage-async_variants-ui). This gem is now UI-free plumbing — the async state machine, `ProcessJob`, the heartbeat watchdog, the external-service callback endpoint, and the `Transformer` base class. Its only runtime dependency is `activestorage` (no more `turbo-rails` / `isolate_assets`).
