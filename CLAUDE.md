@@ -33,7 +33,7 @@ Async previews persist the same graph stock Active Storage builds: the extracted
 
 Naming a `transformer:` is the async opt-in; the kind is determined by what the transformer overrides (`Transformer#standard?`/`#inline?`/`#external?`):
 
-- **Standard** (`ActiveStorage::AsyncVariants::Standard`): overrides neither → runs the stock Active Storage variant pipeline in the background. Replaces the old bare `async: true` (no transformer) declaration.
+- **Standard** (`ActiveStorage::AsyncVariants::Standard`): overrides neither → runs the stock Active Storage variant pipeline in the background. Replaces the old bare `async: true` (no transformer) declaration, which now raises.
 - **Inline**: overrides `process(file, **options)` → blocks worker, returns `{ io:, content_type:, filename: }`
 - **External**: overrides `initiate(source_url:, callback_url:, **options)` → frees worker immediately, external service POSTs to callback URL when done
 

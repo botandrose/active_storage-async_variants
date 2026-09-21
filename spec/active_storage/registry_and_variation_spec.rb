@@ -11,15 +11,11 @@ RSpec.describe "async variants: registry and Variation" do
     end
   end
 
-  describe "deprecated async: key" do
-    # Tolerated for backward compatibility: stripped so it never leaks into
-    # stock's image pipeline, but it no longer opts a variant into async --
-    # only a transformer does.
-    it "is stripped from the transformations and ignored" do
-      variation = ActiveStorage::Variation.wrap(resize_to_limit: [10, 10], async: true)
-
-      expect(variation.transformations).to eq(resize_to_limit: [10, 10])
-      expect(variation.async_options).to eq({})
+  describe "removed async: key" do
+    it "raises, pointing at transformer: as the opt-in" do
+      expect {
+        ActiveStorage::Variation.wrap(resize_to_limit: [10, 10], async: true)
+      }.to raise_error(ArgumentError, /async: .* transformer:/)
     end
   end
 
