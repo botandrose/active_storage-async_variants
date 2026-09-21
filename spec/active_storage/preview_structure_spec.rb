@@ -132,6 +132,42 @@ RSpec.describe "async variants: stock preview structure" do
     end
   end
 
+  describe "Preview#async_record" do
+    it "is the record on the frame blob, or nil before any exists" do
+      preview = @user.video.preview(:poster)
+      expect(preview.async_record).to be_nil
+
+      preview.enqueue!
+
+      expect(@user.video.preview(:poster).async_record).to eq(video_blob.preview_image.blob.variant_records.sole)
+    end
+  end
+
+  describe "Preview#retry! on a previewable blob" do
+    it "replaces a failed frame record with a pending one and enqueues ProcessJob" do
+      @user.video.preview(:poster).enqueue!
+      failed = video_blob.preview_image.blob.variant_records.sole.tap { |r| r.update!(state: "failed", error: "boom") }
+
+      expect {
+        @user.video.preview(:poster).retry!
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+
+      expect(ActiveStorage::VariantRecord.exists?(failed.id)).to be(false)
+      expect(@user.video.preview(:poster).async_record.state).to eq("pending")
+    end
+
+    it "leaves a frame record that is not failed alone" do
+      @user.video.preview(:poster).enqueue!
+      pending = video_blob.preview_image.blob.variant_records.sole
+
+      expect {
+        @user.video.preview(:poster).retry!
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+
+      expect(@user.video.preview(:poster).async_record).to eq(pending)
+    end
+  end
+
   describe "ProcessJob via the preview path (inline transformer)" do
     it "extracts a real frame with the stock previewer and processes the variant from it" do
       ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :video, :poster_inline)

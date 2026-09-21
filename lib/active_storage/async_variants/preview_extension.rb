@@ -11,7 +11,7 @@ module ActiveStorage
       end
 
       def enqueue!
-        return if find_preview_variant_record
+        return if async_record
 
         if result = ActiveStorage::AsyncVariants::NamedVariantScan.find(blob, variation)
           attachment, variant_name, options = result
@@ -32,13 +32,27 @@ module ActiveStorage
         # another caller (or a leftover record) wins; their job handles it
       end
 
+      def retry!
+        async_record&.destroy if async_state == "failed"
+        enqueue!
+      end
+
+      # Stock preview structure: the record hangs off the extracted frame (the
+      # blob's preview_image attachment), not the source blob. The digest is
+      # resolved through stock's Preview#variant so it matches the
+      # default_to-applied variation embedded in representation URLs.
+      def async_record
+        return nil unless blob.preview_image.attached?
+        blob.preview_image.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+      end
+
       def processed?
         async_preview? ? preview_variant_processed? : super
       end
 
       def url(...)
         if async_preview?
-          preview_variant_processed? ? find_preview_variant_record.image.url(...) : fallback_preview_url(...)
+          preview_variant_processed? ? async_record.image.url(...) : fallback_preview_url(...)
         else
           super
         end
@@ -47,7 +61,7 @@ module ActiveStorage
       def key
         if async_preview?
           raise ActiveStorage::Preview::UnprocessedError unless preview_variant_processed?
-          find_preview_variant_record.image.blob.key
+          async_record.image.blob.key
         else
           super
         end
@@ -55,33 +69,33 @@ module ActiveStorage
 
       def async_state
         return nil unless async_preview?
-        find_preview_variant_record&.state || "pending"
+        async_record&.state || "pending"
       end
 
       def progress
-        find_preview_variant_record&.progress
+        async_record&.progress
       end
 
       def progress_known?
-        !find_preview_variant_record&.progress.nil?
+        !async_record&.progress.nil?
       end
 
       # Mirror of VariantWithRecordExtension so a Preview is a drop-in for the
       # UI layer's progress protocol: percent-per-second over elapsed processing
       # time, driving the progress bar's optimistic creep between polls.
       def progress_rate
-        record = find_preview_variant_record
+        record = async_record
         return nil unless record&.created_at && record.last_heartbeat_at && record.progress&.positive?
         elapsed = record.last_heartbeat_at - record.created_at
         elapsed.positive? ? (record.progress / elapsed).round(4) : nil
       end
 
       def last_heartbeat_at
-        find_preview_variant_record&.last_heartbeat_at
+        async_record&.last_heartbeat_at
       end
 
       def error
-        find_preview_variant_record&.error
+        async_record&.error
       end
 
       private
@@ -105,16 +119,7 @@ module ActiveStorage
       end
 
       def preview_variant_processed?
-        find_preview_variant_record&.state == "processed"
-      end
-
-      # Stock preview structure: variant records hang off the extracted frame
-      # (the blob's preview_image attachment), not the source blob. The digest
-      # is resolved through stock's Preview#variant so it matches the
-      # default_to-applied variation embedded in representation URLs.
-      def find_preview_variant_record
-        return nil unless blob.preview_image.attached?
-        blob.preview_image.blob.variant_records.find_by(variation_digest: variant.variation.digest)
+        async_record&.state == "processed"
       end
 
       # Serve the original until the preview variant is processed.

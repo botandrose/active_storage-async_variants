@@ -100,4 +100,37 @@ RSpec.describe "async variants: enqueueing" do
       }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
     end
   end
+
+  describe "variant.retry!" do
+    it "replaces a failed record with a pending one and enqueues ProcessJob" do
+      variant = @user.avatar.variant(:thumb_inline)
+      failed = create_variant_record(variant, state: "failed", error: "boom")
+
+      expect {
+        variant.retry!
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+
+      expect(ActiveStorage::VariantRecord.exists?(failed.id)).to be(false)
+      expect(variant.async_record.state).to eq("pending")
+    end
+
+    it "leaves a record that is not failed alone" do
+      variant = @user.avatar.variant(:thumb_inline)
+      processing = create_variant_record(variant, state: "processing")
+
+      expect {
+        variant.retry!
+      }.not_to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+
+      expect(variant.async_record).to eq(processing)
+    end
+
+    it "enqueues when there is no record at all" do
+      variant = @user.avatar.variant(:thumb_inline)
+
+      expect {
+        variant.retry!
+      }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob)
+    end
+  end
 end

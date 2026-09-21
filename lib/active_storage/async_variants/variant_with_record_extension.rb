@@ -26,6 +26,15 @@ module ActiveStorage
         # another caller (or a leftover record) wins; their job handles it
       end
 
+      def retry!
+        async_record&.destroy if failed?
+        enqueue!
+      end
+
+      def async_record
+        blob.variant_records.find_by(variation_digest: variation.digest)
+      end
+
       def url(...)
         if blob.bucket_backed? && async_variant? && !processed?
           blob.url(...)
@@ -105,10 +114,6 @@ module ActiveStorage
       # autoloaded the consumer model yet).
       def find_named_async_variant
         ActiveStorage::AsyncVariants::NamedVariantScan.find(blob, variation)
-      end
-
-      def async_record
-        blob.variant_records.find_by(variation_digest: variation.digest)
       end
     end
   end
