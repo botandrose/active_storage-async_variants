@@ -132,6 +132,35 @@ RSpec.describe "async variants: stock preview structure" do
     end
   end
 
+  describe ".ensure_preview_image_placeholder!" do
+    # A video's :thumb and :web are both image variants, so two ProcessJobs run this
+    # concurrently for one blob. The loser must not attach a second frame: whichever
+    # frame loses is invisible to has_one :preview_image, stranding its records.
+    it "returns the frame a concurrent caller attached while it waited to serialize" do
+      blob = video_blob
+      winner = nil
+      allow(blob).to receive(:with_lock).and_wrap_original do |original, *args, &block|
+        winner ||= ActiveStorage::AsyncVariants.ensure_preview_image_placeholder!(ActiveStorage::Blob.find(blob.id))
+        original.call(*args, &block)
+      end
+
+      loser = ActiveStorage::AsyncVariants.ensure_preview_image_placeholder!(blob)
+
+      expect(winner).to be_present
+      expect(loser).to eq(winner)
+      expect(ActiveStorage::Attachment.where(record: blob, name: "preview_image").count).to eq(1)
+    end
+
+    it "reuses an already attached frame without creating another" do
+      blob = video_blob
+      first = ActiveStorage::AsyncVariants.ensure_preview_image_placeholder!(blob)
+
+      expect {
+        expect(ActiveStorage::AsyncVariants.ensure_preview_image_placeholder!(blob)).to eq(first)
+      }.not_to change { ActiveStorage::Attachment.where(record: blob, name: "preview_image").count }
+    end
+  end
+
   describe "Preview#async_record" do
     it "is the record on the frame blob, or nil before any exists" do
       preview = @user.video.preview(:poster)
