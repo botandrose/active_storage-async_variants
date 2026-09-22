@@ -80,19 +80,28 @@ module ActiveStorage
     # preview_image, mirroring stock's once-per-blob preview extraction. The
     # external transformer writes the real frame to it; the success callback
     # reconciles the sentinel metadata.
+    #
+    # Serialized on the blob row: every image variant of one video runs this
+    # concurrently, and a second frame would be invisible to has_one
+    # :preview_image, stranding the records that hang off it.
     def self.ensure_preview_image_placeholder!(blob)
       return blob.preview_image.blob if blob.preview_image.attached?
 
-      frame = ActiveStorage::Blob.create_before_direct_upload!(
-        filename: "#{blob.filename.base}.jpg",
-        content_type: "image/jpeg",
-        metadata: { analyzed: true },
-        service_name: blob.service_name,
-        byte_size: 0,
-        checksum: "0",
-      )
-      blob.preview_image.attach(frame)
-      frame
+      blob.with_lock do
+        # with_lock reloaded the blob, so this sees a frame a racing caller just committed.
+        next blob.preview_image.blob if blob.preview_image.attached?
+
+        frame = ActiveStorage::Blob.create_before_direct_upload!(
+          filename: "#{blob.filename.base}.jpg",
+          content_type: "image/jpeg",
+          metadata: { analyzed: true },
+          service_name: blob.service_name,
+          byte_size: 0,
+          checksum: "0",
+        )
+        blob.preview_image.attach(frame)
+        frame
+      end
     end
 
     def self.callback_token_for(variant_record)
