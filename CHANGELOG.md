@@ -7,6 +7,7 @@
 - `async_record` is public on both `VariantWithRecord` and `Preview`, and both gain `retry!` (drop a failed record, then `enqueue!`), so callers need not know where a representation keeps its record.
 - `NamedVariantScan` compares declarations structurally instead of instantiating `attachment.variant`, which raises for videos.
 - MirrorService: the success callback mirrors reconciled variant blobs to the mirrors, as Rails does for direct uploads, and `bucket_backed?` resolves through the primary service.
+- Frame placeholder creation is serialized on the blob row: every image variant of one video reaches it concurrently, and a second `preview_image` attachment would be invisible to `has_one`, stranding the records hanging off it.
 - Ships the `state`/`error`/`attempts` migration for `active_storage_variant_records` (guarded with `if_not_exists`, so apps that added the columns themselves can install it harmlessly), and builds the test schema from `db/migrate` so a missing shipped migration fails the suite.
 
 ## [0.9.0]
