@@ -57,6 +57,21 @@ end
 
 A variant with no `transformer:` is a plain synchronous Active Storage variant — the gem stays out of the way.
 
+### Processing on attach
+
+An async variant is processed when a file is attached only if it says so with Active Storage's own `preprocessed:` option. It takes `true`, a method name, or a proc, evaluated against the record — so one attachment that accepts both images and videos can transcode only the videos:
+
+```ruby
+has_one_attached :media do |attachable|
+  attachable.variant :thumb, resize_to_limit: [150, 150], format: "webp",
+    transformer: Crucible, preprocessed: true
+  attachable.variant :transcoded, resize_to_limit: [1280, 720], format: "mp4",
+    transformer: Crucible, preprocessed: :video?
+end
+```
+
+An async variant without `preprocessed:` is never enqueued on attach; call `enqueue!` on it when you want it. Stock Active Storage never preprocesses an async variant itself — the gem's `ProcessJob` is the only thing that does.
+
 In views, use the same Active Storage helpers:
 
 ```erb
@@ -206,7 +221,7 @@ variant.error   # => "ffmpeg exited with status 1: ..."
 ### External transformer flow
 
 1. User uploads a file to an attachment that has async variants defined
-2. After attachment, a background job is enqueued for each async variant
+2. After attachment, a background job is enqueued for each async variant whose `preprocessed:` holds for the record
 3. `VariantRecord` is created with state `pending`
 4. The job calls the transformer's `initiate` method with presigned source/destination URLs and a signed callback URL, then exits -- the worker is free
 5. The external service processes the file, uploads the result to the destination URL

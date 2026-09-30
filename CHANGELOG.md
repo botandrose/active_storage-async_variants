@@ -1,3 +1,9 @@
+## [Unreleased]
+
+- **Breaking:** Attaching a file enqueues an async variant only when it declares Active Storage's `preprocessed:` option (`true`, a method name, or a proc evaluated against the record). Previously every variant naming a `transformer:` was enqueued on every attach, whatever the file — so an image upload also ran the attachment's video transcode. Stock Active Storage no longer sees async variants when preprocessing, so `preprocessed: true` never also queues a `TransformJob` or a local `PreviewImageJob`.
+- Fix: declaring `preprocessed:` alongside a `transformer:` no longer breaks the declaration-time registry warm-up (a proc raised on `Marshal.dump`; other values registered the wrong digest).
+- Migration note: add `preprocessed: true` (or a condition) to each async variant that should process on attach.
+
 ## [0.9.0]
 
 - **Breaking:** Split the opinionated UI out into a separate gem, [`active_storage-async_variants-ui`](https://github.com/botandrose/active_storage-async_variants-ui). This gem is now UI-free plumbing — the async state machine, `ProcessJob`, the heartbeat watchdog, the external-service callback endpoint, and the `Transformer` base class. Its only runtime dependency is `activestorage` (no more `turbo-rails` / `isolate_assets`).

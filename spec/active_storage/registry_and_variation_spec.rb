@@ -45,6 +45,24 @@ RSpec.describe "async variants: registry and Variation" do
         .to include(transformer: FakePreviewTransformer)
     end
 
+    it "registers a preprocessed variant under the digest its URL carries" do
+      Class.new(ActiveRecord::Base) do
+        self.table_name = "users"
+        has_one_attached :decl_preprocessed_photo do |a|
+          a.variant :decl_preprocessed,
+            resize_to_limit: [125, 125], format: "png",
+            transformer: FakePreviewTransformer, preprocessed: true
+        end
+      end
+
+      lookup_digest = ActiveStorage::Variation.wrap(
+        resize_to_limit: [125, 125], format: "png",
+      ).digest
+
+      expect(ActiveStorage::AsyncVariants::Registry[lookup_digest])
+        .to include(transformer: FakePreviewTransformer)
+    end
+
     it "does not register async_options for variants declared without a transformer" do
       Class.new(ActiveRecord::Base) do
         self.table_name = "users"
