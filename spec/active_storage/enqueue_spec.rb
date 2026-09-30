@@ -4,6 +4,8 @@ RSpec.describe "async variants: enqueueing" do
   include_context "with an attached avatar"
 
   describe "auto-enqueue on attachment" do
+    before { clear_enqueued_jobs }
+
     it "enqueues a ProcessJob for each async variant when a file is attached" do
       user = User.create!
 
@@ -14,6 +16,38 @@ RSpec.describe "async variants: enqueueing" do
           content_type: "image/png",
         )
       }.to have_enqueued_job(ActiveStorage::AsyncVariants::ProcessJob).at_least(:once)
+    end
+
+    def enqueued_variant_names
+      ActiveJob::Base.queue_adapter.enqueued_jobs
+        .select { |job| job["job_class"] == "ActiveStorage::AsyncVariants::ProcessJob" }
+        .map { |job| job["arguments"].last }
+    end
+
+    it "enqueues only the async variants declared preprocessed" do
+      user = User.create!
+      user.avatar.attach(io: File.open("spec/support/fixtures/image.png"), filename: "image.png", content_type: "image/png")
+
+      expect(enqueued_variant_names).to eq(["thumb"])
+    end
+
+    it "evaluates a conditional preprocessed: against the record" do
+      user = User.create!
+      user.avatar.attach(
+        io: File.open("spec/support/fixtures/image.png"), filename: "movie.mp4", content_type: "video/mp4",
+        identify: false, service_name: "test",
+      )
+
+      expect(enqueued_variant_names).to contain_exactly("thumb", "clip")
+    end
+
+    it "keeps stock Active Storage from also preprocessing an async variant" do
+      user = User.create!
+      attach_video_to(user)
+
+      jobs = ActiveJob::Base.queue_adapter.enqueued_jobs.map { |job| job["job_class"] }
+      expect(jobs).to include("ActiveStorage::AsyncVariants::ProcessJob")
+      expect(jobs).not_to include("ActiveStorage::PreviewImageJob", "ActiveStorage::TransformJob")
     end
 
     it "does not enqueue jobs for non-async variants" do

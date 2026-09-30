@@ -20,7 +20,7 @@ bundle exec rspec spec/active_storage/async_variants_spec.rb -e "description" # 
 The gem works by prepending extension modules onto Active Storage classes:
 
 - **`VariationExtension`** → `ActiveStorage::Variation` — extracts the `transformer:` option from variant config before passing the rest to standard Active Storage
-- **`AttachmentExtension`** → `ActiveStorage::Attachment` — hooks into `transform_variants_later` to enqueue `ProcessJob` for variants that name a `transformer:`
+- **`AttachmentExtension`** → `ActiveStorage::Attachment` — hooks into `transform_variants_later` to enqueue `ProcessJob` for async variants whose `preprocessed:` holds for the record, hiding async variants from stock preprocessing
 - **`VariantWithRecordExtension`** → `ActiveStorage::VariantWithRecord` — overrides URL generation to serve the original blob while not ready; adds state query methods (`processed?`, `processing?`, `pending?`, `failed?`)
 - **`PreviewExtension`** → `ActiveStorage::Preview` — blocks the synchronous preview transform for async variants and resolves state/URLs through the stock preview graph
 - **`ProcessJob`** — background job that resolves the attachment's representation (variant vs preview), determines transformer type (inline vs external), and processes accordingly

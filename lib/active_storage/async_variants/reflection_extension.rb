@@ -28,7 +28,7 @@ module ActiveStorage
         # matches the URL-side digest for variants that declare an explicit
         # `format:`. Variants without an explicit `format:` still warm lazily
         # on first view-side call against a blob of that content type.
-        ActiveStorage::Variation.wrap(transformations).default_to(format: :png)
+        ActiveStorage::Variation.wrap(transformations.except(:preprocessed)).default_to(format: :png)
       end
     end
   end
