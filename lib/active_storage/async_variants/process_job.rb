@@ -30,7 +30,8 @@ module ActiveStorage
       def perform_variant(variant)
         blob = variant.blob
         @variant_record = blob.variant_records.create_or_find_by!(variation_digest: variant.variation.digest)
-        @variant_record.update!(state: "processing")
+        return if @variant_record.processed? || @variant_record.in_flight?
+        @variant_record.update!(state: "processing", last_heartbeat_at: Time.current)
 
         dispatch(variant.variation, transform_blob: blob, source_blob: blob)
       end
@@ -52,7 +53,8 @@ module ActiveStorage
         frame_blob = blob.preview_image.blob
         variation = preview.send(:variant).variation
         @variant_record = frame_blob.variant_records.create_or_find_by!(variation_digest: variation.digest)
-        @variant_record.update!(state: "processing")
+        return if @variant_record.processed? || @variant_record.in_flight?
+        @variant_record.update!(state: "processing", last_heartbeat_at: Time.current)
 
         dispatch(variation, transform_blob: frame_blob, source_blob: blob)
       end

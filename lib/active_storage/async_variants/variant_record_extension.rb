@@ -9,6 +9,15 @@ module ActiveStorage
         after_update_commit :touch_attached_records, if: :reached_terminal_state?
       end
 
+      def processed?
+        state == "processed"
+      end
+
+      # A run that stopped heartbeating is presumed dead, so it may be retried.
+      def in_flight?
+        state == "processing" && last_heartbeat_at.present? && last_heartbeat_at > ActiveStorage::AsyncVariants.heartbeat_stale_after.ago
+      end
+
       private
 
       # processed and failed are terminal states: cache fragments built when

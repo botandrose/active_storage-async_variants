@@ -3,6 +3,7 @@
 - **Breaking:** Attaching a file enqueues an async variant only when it declares Active Storage's `preprocessed:` option (`true`, a method name, or a proc evaluated against the record). Previously every variant naming a `transformer:` was enqueued on every attach, whatever the file — so an image upload also ran the attachment's video transcode. Stock Active Storage no longer sees async variants when preprocessing, so `preprocessed: true` never also queues a `TransformJob` or a local `PreviewImageJob`.
 - Fix: declaring `preprocessed:` alongside a `transformer:` no longer breaks the declaration-time registry warm-up (a proc raised on `Marshal.dump`; other values registered the wrong digest).
 - Migration note: add `preprocessed: true` (or a condition) to each async variant that should process on attach.
+- Fix: `ProcessJob` skips a variant record that is already processed or whose run is still heartbeating. Previously every enqueue re-dispatched the variant — attaching an already-processed blob to another record, a retry, or a duplicate job paid for a second render and flipped processed media back to processing.
 
 ## [0.9.0]
 
