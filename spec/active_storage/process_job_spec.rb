@@ -62,6 +62,71 @@ RSpec.describe "async variants: processing jobs" do
     end
   end
 
+  describe "duplicate dispatch" do
+    before do
+      @initiated = 0
+      allow_any_instance_of(FakeExternalTransformer).to receive(:initiate) { @initiated += 1 }
+    end
+
+    def thumb_record
+      @user.avatar.blob.variant_records.find_by!(variation_digest: @user.avatar.variant(:thumb_external).variation.digest)
+    end
+
+    it "dispatches once while the first run is still heartbeating" do
+      2.times { ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external) }
+
+      expect(@initiated).to eq(1)
+    end
+
+    it "leaves a processed variant alone" do
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external)
+      thumb_record.update!(state: "processed")
+
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external)
+
+      expect(@initiated).to eq(1)
+      expect(thumb_record.state).to eq("processed")
+    end
+
+    it "re-dispatches a run whose heartbeat went stale" do
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external)
+      thumb_record.update_columns(last_heartbeat_at: 2.minutes.ago)
+
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external)
+
+      expect(@initiated).to eq(2)
+    end
+
+    it "re-dispatches a failed variant" do
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external)
+      thumb_record.update!(state: "failed")
+
+      ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :avatar, :thumb_external)
+
+      expect(@initiated).to eq(2)
+    end
+
+    it "dispatches nothing when a processed blob is attached to another record" do
+      @user.video.attach(io: File.open("spec/support/fixtures/image.png"), filename: "clip.mp4", content_type: "video/mp4", identify: false)
+      perform_enqueued_jobs(only: ActiveStorage::AsyncVariants::ProcessJob)
+      ActiveStorage::VariantRecord.update_all(state: "processed")
+
+      User.create!.video.attach(@user.video.blob)
+      perform_enqueued_jobs(only: ActiveStorage::AsyncVariants::ProcessJob)
+
+      expect(@initiated).to eq(1)
+    end
+
+    it "dispatches a preview once while the first run is still heartbeating" do
+      @user.video.attach(io: File.open("spec/support/fixtures/image.png"), filename: "clip.mp4", content_type: "video/mp4", identify: false)
+      clear_enqueued_jobs
+
+      2.times { ActiveStorage::AsyncVariants::ProcessJob.perform_now(@user, :video, :poster_web) }
+
+      expect(@initiated).to eq(1)
+    end
+  end
+
   describe "base Transformer" do
     it "raises NotImplementedError for process" do
       expect {
