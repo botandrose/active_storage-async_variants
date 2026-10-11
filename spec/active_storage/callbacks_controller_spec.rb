@@ -66,6 +66,70 @@ RSpec.describe "async variants: callback endpoint" do
       expect(preview_blob.checksum).to eq("h8arsBrB0ACLrhqOw723VQ==")
     end
 
+    it "overwrites a reused output blob's metadata when a re-render rewrites it in place" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      output = ActiveStorage::Blob.create_before_direct_upload!(
+        filename: "thumb.webp", content_type: "image/webp",
+        service_name: "test", byte_size: 1111, checksum: "1B2M2Y8AsgTpgAkKqiq0Kw==",
+        metadata: { identified: true },
+      )
+      variant_record.image.attach(output)
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "success", byte_size: 4567, checksum: "eM4lMR7iY0vWpgLrqBXddg==" },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      output.reload
+      expect(output.byte_size).to eq(4567)
+      expect(output.checksum).to eq("eM4lMR7iY0vWpgLrqBXddg==")
+    end
+
+    it "overwrites a video frame's metadata when it is re-extracted in place" do
+      frame = ActiveStorage::Blob.create_before_direct_upload!(
+        filename: "frame.jpg", content_type: "image/jpeg",
+        service_name: "test", byte_size: 52779, checksum: "a4Mf5HCNsLb+ARuECrohNQ==",
+        metadata: { identified: true },
+      )
+      @user.avatar.blob.preview_image.attach(frame)
+      variant_record = frame.variant_records.create!(
+        variation_digest: @user.avatar.variant(:thumb).variation.digest, state: "processing",
+      )
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "success", preview_image_byte_size: 53280, preview_image_checksum: "nZbDlB+eLxnrK+i8IUzGrg==" },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      frame.reload
+      expect(frame.byte_size).to eq(53280)
+      expect(frame.checksum).to eq("nZbDlB+eLxnrK+i8IUzGrg==")
+    end
+
+    it "leaves a reused output blob alone when nothing is reported" do
+      variant = @user.avatar.variant(:thumb)
+      variant_record = create_variant_record(variant, state: "processing")
+      output = ActiveStorage::Blob.create_before_direct_upload!(
+        filename: "thumb.webp", content_type: "image/webp",
+        service_name: "test", byte_size: 1111, checksum: "eM4lMR7iY0vWpgLrqBXddg==",
+        metadata: { identified: true },
+      )
+      variant_record.image.attach(output)
+      token = ActiveStorage::AsyncVariants.callback_token_for(variant_record)
+
+      post "/active_storage/async_variants/callbacks/#{token}",
+        params: { status: "success", byte_size: "", checksum: "" },
+        as: :json
+
+      expect(response).to have_http_status(:ok)
+      output.reload
+      expect(output.byte_size).to eq(1111)
+      expect(output.checksum).to eq("eM4lMR7iY0vWpgLrqBXddg==")
+    end
+
     it "does not clobber a source blob that already has real byte_size and checksum" do
       variant = @user.avatar.variant(:thumb)
       variant_record = create_variant_record(variant, state: "processing")
