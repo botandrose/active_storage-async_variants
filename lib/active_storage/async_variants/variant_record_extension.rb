@@ -7,6 +7,7 @@ module ActiveStorage
 
       included do
         after_update_commit :touch_attached_records, if: :reached_terminal_state?
+        after_destroy_commit :purge_late_outputs
       end
 
       def processed?
@@ -26,6 +27,11 @@ module ActiveStorage
       # error state, swaps src to the direct CDN URL, etc.).
       def reached_terminal_state?
         saved_change_to_state? && %w[processed failed].include?(state)
+      end
+
+      # A render that held the row lock can commit an output after this destroy read the record's attachments.
+      def purge_late_outputs
+        ActiveStorage::Attachment.where(record: self).find_each(&:purge_later)
       end
 
       def touch_attached_records
