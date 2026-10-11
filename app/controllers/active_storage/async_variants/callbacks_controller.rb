@@ -35,16 +35,19 @@ module ActiveStorage
 
       def apply_reported_metadata(variant_record, params)
         reconcile(variant_record.image.blob, params[:byte_size], params[:checksum])
-        reconcile(variant_record.blob, params[:preview_image_byte_size], params[:preview_image_checksum])
+        if frame?(variant_record.blob)
+          reconcile(variant_record.blob, params[:preview_image_byte_size], params[:preview_image_checksum])
+        end
       end
 
+      # A re-render writes over a reused blob, so the reported values describe the object now stored.
       def reconcile(blob, byte_size, checksum)
         return unless blob
 
-        if positive_int?(byte_size) && blob.byte_size.zero?
+        if positive_int?(byte_size)
           blob.byte_size = byte_size
         end
-        if checksum.present? && blob.checksum == "0"
+        if checksum.present?
           blob.checksum = checksum
         end
         blob.save!
@@ -52,6 +55,12 @@ module ActiveStorage
         if blob.checksum != "0"
           blob.mirror_later
         end
+      end
+
+      # preview_image_* must never land on a variant's source blob.
+      def frame?(blob)
+        blob.checksum == "0" ||
+          ActiveStorage::Attachment.exists?(record_type: "ActiveStorage::Blob", name: "preview_image", blob_id: blob.id)
       end
 
       def positive_int?(value)
