@@ -12,6 +12,8 @@
 - Frame placeholder creation is serialized on the blob row: every image variant of one video reaches it concurrently, and a second `preview_image` attachment would be invisible to `has_one`, stranding the records hanging off it.
 - Ships the `state`/`error`/`attempts` migration for `active_storage_variant_records` (guarded with `if_not_exists`, so apps that added the columns themselves can install it harmlessly), and builds the test schema from `db/migrate` so a missing shipped migration fails the suite.
 - Fix: `ProcessJob` skips a variant record that is already processed or whose run is still heartbeating. Previously every enqueue re-dispatched the variant — attaching an already-processed blob to another record, a retry, or a duplicate job paid for a second render and flipped processed media back to processing.
+- Fix: the success callback applies the reported `byte_size` and `checksum` whenever they arrive, not only over the `0`/`"0"` placeholders, since a re-render writes over the record's existing output blob. Reported `preview_image_*` values land only on a frame, never on a variant's source blob.
+- Fix: destroying a variant record purges any output a racing render attached after the destroy read its attachments, so a purged source no longer leaves outputs pointing at a deleted record.
 
 ## [0.9.0]
 
