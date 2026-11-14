@@ -107,6 +107,7 @@ RSpec.describe "async variants: processing jobs" do
     end
 
     it "dispatches nothing when a processed blob is attached to another record" do
+      clear_enqueued_jobs
       @user.video.attach(io: File.open("spec/support/fixtures/image.png"), filename: "clip.mp4", content_type: "video/mp4", identify: false)
       perform_enqueued_jobs(only: ActiveStorage::AsyncVariants::ProcessJob)
       ActiveStorage::VariantRecord.update_all(state: "processed")

@@ -85,6 +85,8 @@ RSpec.describe "async variants: stock preview structure" do
       expect(frame.checksum).to eq("h8arsBrB0ACLrhqOw723VQ==")
       expect(record.image.blob.reload.byte_size).to eq(4567)
 
+      # Before Rails 8.1, the request resets ActiveStorage::Current on its way out.
+      ActiveStorage::Current.url_options = { protocol: "https", host: "example.com" }
       preview = @user.video.preview(:poster)
       expect(preview.processed?).to be true
       expect(preview.url).to end_with("/poster.jpg")
